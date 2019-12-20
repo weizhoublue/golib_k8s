@@ -352,3 +352,203 @@ func Test_3(t *testing.T){
 
 }
 
+
+
+func Test_4(t *testing.T){
+
+/*  test
+
+#资源类 和 子资源类 例子
+kubectl create clusterrole test1-clusterrole -n default --verb=get,list --resource=deployments.apps,deployments.extensions --resource=pods/log --resource=pods 
+kubectl create clusterrolebinding test1 -n default --clusterrole=test1-clusterrole  --user=jane
+# kubectl delete clusterrole test1-clusterrole
+# kubectl delete clusterrolebinding test1
+
+#非资源类  例子
+kubectl create clusterrole test2-clusterrole -n default --verb=get,post --non-resource-url=/health
+kubectl create clusterrolebinding test2 -n default --clusterrole=test2-clusterrole --user=jane
+# kubectl delete clusterrole test2-clusterrole
+# kubectl delete clusterrolebinding test2
+
+#资源的实例 例子
+kubectl create clusterrole test3-clusterrole -n default --verb=get --resource=configmaps --resource-name=tom-config  
+kubectl create clusterrolebinding test3 -n default --clusterrole=test3-clusterrole  --user=jane
+# kubectl delete clusterrole test3-clusterrole
+# kubectl delete clusterrolebinding test3
+
+
+*/
+
+	k8s.EnableLog=true
+	k:=k8s.K8sClient{}
+
+	err:=k.AutoConfig()
+	if err!=nil {
+		fmt.Println(  "failed to create k8s client" )
+		t.FailNow()
+	}
+
+	//========================== resource
+	userName:="jane"
+	userGroupName:=[]string{}
+
+	checkVerb:=k8s.VerbGet
+	checkResName:="deployments"
+	checkSubResName:=""
+	checkResInstanceName:=""
+	checkResApiGroup:="apps"
+	checkResNamespace:="default"
+
+	if allowed , reason , err:= k.CheckUserRole(userName, userGroupName , 
+		checkVerb, checkResName, checkSubResName , checkResInstanceName  , checkResApiGroup , checkResNamespace  ); err!=nil{
+		fmt.Printf("error: %v \n" , err )
+	}else {
+		fmt.Printf("allowed?%v , reason: %s \n" ,allowed , reason )
+	}
+
+
+	//========================== resource subresource
+	userName="jane"
+	userGroupName=[]string{}
+
+	checkVerb=k8s.VerbGet
+	checkResName="pods"
+	checkSubResName="log"
+	checkResInstanceName=""
+	checkResApiGroup=""
+	checkResNamespace="default"
+
+	if allowed , reason , err:= k.CheckUserRole(userName, userGroupName , 
+		checkVerb, checkResName, checkSubResName , checkResInstanceName  , checkResApiGroup , checkResNamespace  ); err!=nil{
+		fmt.Printf("error: %v \n" , err )
+	}else {
+		fmt.Printf("allowed?%v , reason: %s \n" ,allowed , reason )
+	}
+
+
+	//========================== resource instance
+	userName="jane"
+	userGroupName=[]string{}
+
+	checkVerb=k8s.VerbGet
+	checkResName="configmaps"
+	checkSubResName=""
+	checkResInstanceName="tom-config"
+	checkResApiGroup=""
+	checkResNamespace="default"
+
+	if allowed , reason , err:= k.CheckUserRole(userName, userGroupName , 
+		checkVerb, checkResName, checkSubResName , checkResInstanceName  , checkResApiGroup , checkResNamespace  ); err!=nil{
+		fmt.Printf("error: %v \n" , err )
+	}else {
+		fmt.Printf("allowed?%v , reason: %s \n" ,allowed , reason )
+	}
+
+
+
+	//========================== noresource
+	userName="jane"
+	userGroupName=[]string{}
+
+
+	checkVerb=k8s.VerbGet
+	checkResName="/health"
+
+	if allowed , reason , err:= k.CheckUserRole(userName, userGroupName , 
+		checkVerb, checkResName, "" , ""  , "" , ""  ); err!=nil{
+		fmt.Printf("error: %v \n" , err )
+	}else {
+		fmt.Printf("allowed?%v , reason: %s \n" ,allowed , reason )
+	}
+
+
+
+}
+
+
+
+
+
+
+func Test_5(t *testing.T){
+
+
+	k8s.EnableLog=true
+	k:=k8s.K8sClient{}
+
+	err:=k.AutoConfig()
+	if err!=nil {
+		fmt.Println(  "failed to create k8s client" )
+		t.FailNow()
+	}
+
+	//========================== resource
+
+	checkVerb:=k8s.VerbGet
+	checkResName:="deployments"
+	checkSubResName:=""
+	checkResInstanceName:=""
+	checkResApiGroup:="apps"
+	checkResNamespace:="default"
+
+	if allowed , reason , err:= k.CheckSelfRole( checkVerb, checkResName, checkSubResName , checkResInstanceName  , checkResApiGroup , checkResNamespace  ) ; err!=nil{
+		fmt.Printf("error: %v \n" , err )
+	}else {
+		fmt.Printf("allowed?%v , reason: %s \n" ,allowed , reason )
+	}
+
+
+	//========================== resource subresource
+
+
+	checkVerb=k8s.VerbGet
+	checkResName="pods"
+	checkSubResName="log"
+	checkResInstanceName=""
+	checkResApiGroup=""
+	checkResNamespace="default"
+
+	if allowed , reason , err:= k.CheckSelfRole( checkVerb, checkResName, checkSubResName , checkResInstanceName  , checkResApiGroup , checkResNamespace  ) ; err!=nil{
+		fmt.Printf("error: %v \n" , err )
+	}else {
+		fmt.Printf("allowed?%v , reason: %s \n" ,allowed , reason )
+	}
+
+
+	//========================== resource instance
+
+	checkVerb=k8s.VerbGet
+	checkResName="configmaps"
+	checkSubResName=""
+	checkResInstanceName="tom-config"
+	checkResApiGroup=""
+	checkResNamespace="default"
+
+	if allowed , reason , err:= k.CheckSelfRole( checkVerb, checkResName, checkSubResName , checkResInstanceName  , checkResApiGroup , checkResNamespace  ) ; err!=nil{
+		fmt.Printf("error: %v \n" , err )
+	}else {
+		fmt.Printf("allowed?%v , reason: %s \n" ,allowed , reason )
+	}
+
+
+
+	//========================== noresource
+
+	checkVerb=k8s.VerbGet
+	checkResName="/health"
+
+	if allowed , reason , err:= k.CheckSelfRole( checkVerb, checkResName, "" , ""  , "" , ""  ) ; err!=nil{
+		fmt.Printf("error: %v \n" , err )
+	}else {
+		fmt.Printf("allowed?%v , reason: %s \n" ,allowed , reason )
+	}
+
+
+
+}
+
+
+
+
+
+

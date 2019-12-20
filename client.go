@@ -21,7 +21,8 @@ import (
 	"k8s.io/client-go/util/retry"
 
 
-
+	authorizationClientv1 "k8s.io/client-go/kubernetes/typed/authorization/v1"
+	authorizationv1 "k8s.io/api/authorization/v1"
 )
 
 
@@ -52,6 +53,7 @@ func getFileName( path string ) string {
 }
 
 func log( format string, a ...interface{} ) (n int, err error) {
+
     if EnableLog {
 
 		prefix := ""
@@ -367,6 +369,7 @@ func (c *K8sClient)GetDeployment( namespace string ,  deploymentName string ) ( 
 		}
 
 		// https://godoc.org/k8s.io/api/apps/v1#Resource
+		// https://godoc.org/k8s.io/client-go/dynamic#Interface
 		// https://godoc.org/k8s.io/client-go/dynamic#NamespaceableResourceInterface
 		list, err := Client.Resource(deploymentRes).Namespace(namespace).List(metav1.ListOptions{})
 		if err != nil {
@@ -747,7 +750,6 @@ func (c *K8sClient)UpdateDeployment( namespace string , deploymentName string , 
 
 }
 
-//===========
 
 
 
@@ -755,6 +757,227 @@ func (c *K8sClient)UpdateDeployment( namespace string , deploymentName string , 
 
 
 
+//=========== RBAC, check whether a user has the specified role ========================== 
+ 
+/*
+ write from example :  
+	https://github.com/kubernetes/kubernetes/blob/master/pkg/kubectl/cmd/auth/cani.go#L235-L260
+	https://github.com/kubernetes/kubernetes/blob/master/pkg/kubectl/cmd/auth/cani_test.go
+*/
+
+
+
+
+type VerbType string
+
+const (
+	VerbGet=VerbType("get")
+	VerbList=VerbType("list")
+	VerbWatch=VerbType("watch")
+	VerbCreate=VerbType("create")
+	VerbUpdate=VerbType("update")
+	VerbPatch=VerbType("patch")
+	VerbDelete=VerbType("delete")
+	VerbDeletecollection=VerbType("deletecollection")
+	VerbAll=VerbType("*")
+)
+
+
+/*
+input:
+checkNamespace
+    // Namespace is the namespace of the action being requested.  Currently, there is no distinction between no namespace and all namespaces
+    // "" (empty) is defaulted for LocalSubjectAccessReviews
+    // "" (empty) is empty for cluster-scoped resources
+    // "" (empty) means "all" for namespace scoped resources from a SubjectAccessReview or SelfSubjectAccessReview
+    // +optional
+checkResName:
+	// 可为 K8S资源类的名字 可使用 kubectl api-resources 查询
+	// 也可为 非K8S资源类的名字（自定义）
+checkResApiGroup:
+    // Group is the API Group of the Resource.  "*" means all.
+    // +optional
+    // 可使用 kubectl api-resources 查询每个 资源类的  api group
+
+*/
+func (c *K8sClient)CheckUserRole( userName string  , userGroupName []string , checkVerb VerbType ,	checkResName string, checkSubResName string ,checkResInstanceName string , checkResApiGroup string , checkResNamespace string ) ( allowed bool , reason string , e error ){
+
+	e=nil
+	allowed=false
+	reason=""
+
+	if c.Config == nil {
+		e=fmt.Errorf("struct K8sClient is not initialized correctly , Config==nil " )
+		return
+	}
+	if len(userName)==0 {
+		e=fmt.Errorf("empty userName " )
+		return
+	}
+	if len(checkResName)==0 {
+		e=fmt.Errorf("empty checkResName " )
+		return
+	}
+
+
+	//  https://godoc.org/k8s.io/client-go/kubernetes/typed/authorization/v1#NewForConfig
+	client, e1 := authorizationClientv1.NewForConfig(c.Config)
+	if e1 != nil {
+		e=fmt.Errorf("failed to NewForConfig, info=%v , config=%v " , e1 , c.Config )
+		return
+	}
+
+	var sar *authorizationv1.SubjectAccessReview
+
+	if strings.HasPrefix(checkResName, "/")==false {
+		// ResourceURL
+		log("check for Resource %s \n", checkResName )
+
+		sar = &authorizationv1.SubjectAccessReview{  // https://godoc.org/k8s.io/api/authorization/v1#SubjectAccessReview
+			Spec: authorizationv1.SubjectAccessReviewSpec{   // https://godoc.org/k8s.io/api/authorization/v1#SubjectAccessReviewSpec
+				User: userName ,  // check for a user
+				Groups: userGroupName , // check for a user group
+				//UID: "" ,
+				ResourceAttributes: &authorizationv1.ResourceAttributes{  // https://godoc.org/k8s.io/api/authorization/v1#SubjectAccessReviewSpec
+					Namespace:   checkResNamespace ,
+					Verb:        string(checkVerb) ,
+					Group:       checkResApiGroup , //"extensions",  // resource api group 
+					Version:	"" , //  version of resource api group
+									    // Version is the API Version of the Resource.  "*" means all.
+									    // +optional
+					Resource:    checkResName , //"deployments",
+					Subresource: checkSubResName,
+					Name:        checkResInstanceName ,
+				},
+			},
+		}
+
+	}else{
+		// NonResourceURL
+		log("check for NonResource %s \n", checkResName )
+
+		sar = &authorizationv1.SubjectAccessReview{  // https://godoc.org/k8s.io/api/authorization/v1#SubjectAccessReview
+			Spec: authorizationv1.SubjectAccessReviewSpec{   // https://godoc.org/k8s.io/api/authorization/v1#SubjectAccessReviewSpec
+				User: userName ,  // check for a user
+				Groups: userGroupName , // check for a user group
+				//UID: "" ,
+				NonResourceAttributes: &authorizationv1.NonResourceAttributes{  
+					// https://godoc.org/k8s.io/api/authorization/v1#NonResourceAttributes
+					Path:   checkResName ,
+					Verb:   string(checkVerb) ,
+				},
+			},
+		}
+
+	}
+
+	// https://godoc.org/k8s.io/client-go/kubernetes/typed/authorization/v1#AuthorizationV1Client.SubjectAccessReviews
+	// https://godoc.org/k8s.io/client-go/kubernetes/typed/authorization/v1#SubjectAccessReviewExpansion
+	response, err := client.SubjectAccessReviews().Create(sar)
+	if err != nil {
+		e=err
+		return 
+	}
+
+
+	// response  https://godoc.org/k8s.io/api/authorization/v1#SubjectAccessReview
+	log("%v \n" , response )
+	
+	// https://godoc.org/k8s.io/api/authorization/v1#SubjectAccessReviewStatus
+	log("%v \n" , response.Status.Allowed )
+	log("%v \n" , response.Status.Reason )
+	log("%v \n" , response.Status.EvaluationError )
+
+
+	allowed=response.Status.Allowed
+	reason=response.Status.Reason
+
+	return 
+}
+
+
+
+func (c *K8sClient)CheckSelfRole(  checkVerb VerbType ,	checkResName string, checkSubResName string ,checkResInstanceName string , checkResApiGroup string , checkResNamespace string ) ( allowed bool , reason string , e error ){
+
+	e=nil
+	allowed=false
+	reason=""
+
+	if c.Config == nil {
+		e=fmt.Errorf("struct K8sClient is not initialized correctly , Config==nil " )
+		return
+	}
+	if len(checkResName)==0 {
+		e=fmt.Errorf("empty checkResName " )
+		return
+	}
+
+
+	//  https://godoc.org/k8s.io/client-go/kubernetes/typed/authorization/v1#NewForConfig
+	client, e1 := authorizationClientv1.NewForConfig(c.Config)
+	if e1 != nil {
+		e=fmt.Errorf("failed to NewForConfig, info=%v , config=%v " , e1 , c.Config )
+		return
+	}
+
+	var sar *authorizationv1.SelfSubjectAccessReview
+
+	if strings.HasPrefix(checkResName, "/")==false {
+		// ResourceURL
+		log("check for Resource %s \n", checkResName )
+
+		sar = &authorizationv1.SelfSubjectAccessReview{  // https://godoc.org/k8s.io/api/authorization/v1#SelfSubjectAccessReview
+			Spec: authorizationv1.SelfSubjectAccessReviewSpec{   // https://godoc.org/k8s.io/api/authorization/v1#SelfSubjectAccessReviewSpec
+				ResourceAttributes: &authorizationv1.ResourceAttributes{  // https://godoc.org/k8s.io/api/authorization/v1#ResourceAttributes
+					Namespace:   checkResNamespace ,
+					Verb:        string(checkVerb) ,
+					Group:       checkResApiGroup , //"extensions",  // resource api group 
+					Version:	"" , //  version of resource api group
+									    // Version is the API Version of the Resource.  "*" means all.
+									    // +optional
+					Resource:    checkResName , //"deployments",
+					Subresource: checkSubResName,
+					Name:        checkResInstanceName ,
+				},
+			},
+		}
+
+	}else{
+		// NonResourceURL
+		log("check for NonResource %s \n", checkResName )
+
+		sar = &authorizationv1.SelfSubjectAccessReview{  // https://godoc.org/k8s.io/api/authorization/v1#SelfSubjectAccessReview
+			Spec: authorizationv1.SelfSubjectAccessReviewSpec{   // https://godoc.org/k8s.io/api/authorization/v1#SelfSubjectAccessReviewSpec
+				NonResourceAttributes: &authorizationv1.NonResourceAttributes{   // https://godoc.org/k8s.io/api/authorization/v1#NonResourceAttributes
+					Path:   checkResName ,
+					Verb:   string(checkVerb) ,
+				},
+			},
+		}
+	}
+
+	// https://godoc.org/k8s.io/client-go/kubernetes/typed/authorization/v1#AuthorizationV1Client.SelfSubjectAccessReviews
+	// https://godoc.org/k8s.io/client-go/kubernetes/typed/authorization/v1#SelfSubjectAccessReviewExpansion
+	response, err := client.SelfSubjectAccessReviews().Create(sar)
+	if err != nil {
+		e=err
+		return 
+	}
+
+	// response  https://godoc.org/k8s.io/api/authorization/v1#SubjectAccessReview
+	log("%v \n" , response )
+	
+	// https://godoc.org/k8s.io/api/authorization/v1#SubjectAccessReviewStatus
+	log("%v \n" , response.Status.Allowed )
+	log("%v \n" , response.Status.Reason )
+	log("%v \n" , response.Status.EvaluationError )
+
+
+	allowed=response.Status.Allowed
+	reason=response.Status.Reason
+
+	return 
+}
 
 
 
