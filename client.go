@@ -771,6 +771,7 @@ func (c *K8sClient)UpdateDeployment( namespace string , deploymentName string , 
 type VerbType string
 
 const (
+	VerbNone=VerbType("")
 	VerbGet=VerbType("get")
 	VerbList=VerbType("list")
 	VerbWatch=VerbType("watch")
