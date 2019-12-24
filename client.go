@@ -769,9 +769,9 @@ func (c *K8sClient)UpdateDeployment( namespace string , deploymentName string , 
 
 
 type VerbType string
-
 const (
 	VerbNone=VerbType("")
+	// resource
 	VerbGet=VerbType("get")
 	VerbList=VerbType("list")
 	VerbWatch=VerbType("watch")
@@ -780,8 +780,22 @@ const (
 	VerbPatch=VerbType("patch")
 	VerbDelete=VerbType("delete")
 	VerbDeletecollection=VerbType("deletecollection")
+
+	//nonSource
+	VerbNoneGet=VerbType("get")
+	VerbNonePost=VerbType("post")
+	VerbNonePut=VerbType("put")
+	VerbNonePatch=VerbType("patch")
+	VerbNoneDelete=VerbType("delete")
+	VerbNoneHead=VerbType("head")
+	VerbNoneOptions=VerbType("options")
+
+
 	VerbAll=VerbType("*")
 )
+
+
+
 
 
 /*
