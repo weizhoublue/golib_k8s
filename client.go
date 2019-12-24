@@ -807,6 +807,11 @@ func (c *K8sClient)CheckUserRole( userName string  , userGroupName []string , ch
 	allowed=false
 	reason=""
 
+	if checkVerb==VerbNone {
+		e=fmt.Errorf("verb is none " )
+		return
+	}
+
 	if c.Config == nil {
 		e=fmt.Errorf("struct K8sClient is not initialized correctly , Config==nil " )
 		return
@@ -903,6 +908,11 @@ func (c *K8sClient)CheckSelfRole(  checkVerb VerbType ,	checkResName string, che
 	e=nil
 	allowed=false
 	reason=""
+
+	if checkVerb==VerbNone {
+		e=fmt.Errorf("verb is none " )
+		return
+	}
 
 	if c.Config == nil {
 		e=fmt.Errorf("struct K8sClient is not initialized correctly , Config==nil " )
