@@ -360,21 +360,27 @@ func Test_4(t *testing.T){
 
 #资源类 和 子资源类 例子
 kubectl create clusterrole test1-clusterrole -n default --verb=get,list --resource=deployments.apps,deployments.extensions --resource=pods/log --resource=pods 
-kubectl create clusterrolebinding test1 -n default --clusterrole=test1-clusterrole  --user=jane
+kubectl create clusterrolebinding test11 -n default --clusterrole=test1-clusterrole  --user=jane
+kubectl create clusterrolebinding test12 -n default --clusterrole=test1-clusterrole  --group=janeGroup
 # kubectl delete clusterrole test1-clusterrole
-# kubectl delete clusterrolebinding test1
+# kubectl delete clusterrolebinding test11
+# kubectl delete clusterrolebinding test12
 
 #非资源类  例子
 kubectl create clusterrole test2-clusterrole -n default --verb=get,post --non-resource-url=/health
-kubectl create clusterrolebinding test2 -n default --clusterrole=test2-clusterrole --user=jane
+kubectl create clusterrolebinding test21 -n default --clusterrole=test2-clusterrole --user=jane
+kubectl create clusterrolebinding test22 -n default --clusterrole=test2-clusterrole --group=janeGroup
 # kubectl delete clusterrole test2-clusterrole
-# kubectl delete clusterrolebinding test2
+# kubectl delete clusterrolebinding test21
+# kubectl delete clusterrolebinding test22
 
 #资源的实例 例子
 kubectl create clusterrole test3-clusterrole -n default --verb=get --resource=configmaps --resource-name=tom-config  
-kubectl create clusterrolebinding test3 -n default --clusterrole=test3-clusterrole  --user=jane
+kubectl create clusterrolebinding test31 -n default --clusterrole=test3-clusterrole  --user=jane
+kubectl create clusterrolebinding test32 -n default --clusterrole=test3-clusterrole  --group=janeGroup
 # kubectl delete clusterrole test3-clusterrole
-# kubectl delete clusterrolebinding test3
+# kubectl delete clusterrolebinding test31
+# kubectl delete clusterrolebinding test32
 
 
 */
@@ -449,11 +455,32 @@ kubectl create clusterrolebinding test3 -n default --clusterrole=test3-clusterro
 	//========================== noresource
 	userName="jane"
 	userGroupName=[]string{}
-
-
 	checkVerb=k8s.VerbGet
 	checkResName="/health"
+	if allowed , reason , err:= k.CheckUserRole(userName, userGroupName , 
+		checkVerb, checkResName, "" , ""  , "" , ""  ); err!=nil{
+		fmt.Printf("error: %v \n" , err )
+	}else {
+		fmt.Printf("allowed?%v , reason: %s \n" ,allowed , reason )
+	}
 
+
+	userName=""
+	userGroupName=[]string{"janeGroup"}
+	checkVerb=k8s.VerbGet
+	checkResName="/health"
+	if allowed , reason , err:= k.CheckUserRole(userName, userGroupName , 
+		checkVerb, checkResName, "" , ""  , "" , ""  ); err!=nil{
+		fmt.Printf("error: %v \n" , err )
+	}else {
+		fmt.Printf("allowed?%v , reason: %s \n" ,allowed , reason )
+	}
+
+
+	userName="jane"
+	userGroupName=[]string{"janeGroup"}
+	checkVerb=k8s.VerbGet
+	checkResName="/health"
 	if allowed , reason , err:= k.CheckUserRole(userName, userGroupName , 
 		checkVerb, checkResName, "" , ""  , "" , ""  ); err!=nil{
 		fmt.Printf("error: %v \n" , err )

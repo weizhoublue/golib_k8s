@@ -810,8 +810,8 @@ func (c *K8sClient)CheckUserRole( userName string  , userGroupName []string , ch
 		e=fmt.Errorf("struct K8sClient is not initialized correctly , Config==nil " )
 		return
 	}
-	if len(userName)==0 {
-		e=fmt.Errorf("empty userName " )
+	if len(userName)==0 && len(userGroupName)==0 {
+		e=fmt.Errorf("empty userName and userGroupName " )
 		return
 	}
 	if len(checkResName)==0 {
