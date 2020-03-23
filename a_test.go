@@ -49,6 +49,58 @@ func Test_1(t *testing.T){
 }
 
 
+func Test_hostPod(t *testing.T){
+
+	k8s.EnableLog=false
+	k:=k8s.K8sClient{}
+
+	err:=k.AutoConfig()
+	if err!=nil {
+		fmt.Println(  "failed to create k8s client" )
+		t.FailNow()
+	}
+
+	namespace:=""
+	if _ , detail , err:=k.GetPods(namespace) ; err!=nil {
+		fmt.Println(  err )
+		t.FailNow()
+	}else{
+		//fmt.Printf("podInfo=%v \n" , podInfo)
+		for n , v :=range detail {
+			fmt.Printf("pod %v : HostNetwork=%v NodeName=%v PodIP=%v Phase=%v podName=%v \n" , 
+				   n, v.Spec.HostNetwork   ,  v.Spec.NodeName , v.Status.PodIP , v.Status.Phase , v.ObjectMeta.Name )
+		}
+	}
+
+
+}
+
+
+func Test_node(t *testing.T){
+
+	k8s.EnableLog=false
+	k:=k8s.K8sClient{}
+
+	err:=k.AutoConfig()
+	if err!=nil {
+		fmt.Println(  "failed to create k8s client" )
+		t.FailNow()
+	}
+
+	if info , _ , err:=k.GetNodes( ) ; err!=nil {
+		fmt.Println(  err )
+		t.FailNow()
+	}else{
+		//fmt.Printf("podInfo=%v \n" , podInfo)
+		for n , v :=range info {
+			fmt.Printf("node %v :  %v \n" ,  n, v )
+		}
+	}
+
+
+}
+
+
 
 // recommended method
 func Test_2(t *testing.T){

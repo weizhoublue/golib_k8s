@@ -25,6 +25,55 @@ import (
 	authorizationv1 "k8s.io/api/authorization/v1"
 )
 
+//=====================================================
+/*
+github 
+https://github.com/kubernetes/client-go
+godoc
+https://godoc.org/k8s.io/client-go/kubernetes
+
+
+example: https://github.com/kubernetes/client-go/tree/master/examples
+
+
+
+
+
+func (c *K8sClient) AutoConfig( )  error  
+
+func (c *K8sClient)GetPods( namespace string ) (  podNameList []map[string]string , podDetailList []corev1.Pod , e error )
+
+func (c *K8sClient)CheckPodHealthy( namespace string , podName string ) (  exist bool , e error )
+
+#使用传统的方式，deployment的数据结构定义固定，虽然 不和 版本耦合
+func (c *K8sClient)GetDeploymentTyped( namespace string ,  deploymentName string ) (  deploymentBasicInfo []map[string]string , deploymentDetailList  []appsv1.Deployment , e error )
+
+#使用灵活的方式，deployment的数据结构定义 不固定，和 版本耦合
+func (c *K8sClient)GetDeployment( namespace string ,  deploymentName string ) (  deploymentBasicInfo []map[string]string , deploymentDetailList  []unstructured.Unstructured , e error )
+
+func (c *K8sClient)CreateDeploymentTyped( namespace string , deploymentSpec *appsv1.Deployment ) ( e error )
+
+func (c *K8sClient)CreateDeployment( namespace string , deploymentYaml *unstructured.Unstructured ) ( e error )
+
+func (c *K8sClient)DelDeploymentTyped( namespace string , deploymentName string ) ( e error )
+
+func (c *K8sClient)DelDeployment( namespace string , deploymentName string ) ( e error )
+
+func (c *K8sClient)UpdateDeploymentTyped( namespace string , deploymentName string , handler func(*appsv1.Deployment)error  ) ( e error )
+
+func (c *K8sClient)UpdateDeployment( namespace string , deploymentName string , handler func(*unstructured.Unstructured)error  ) ( e error )
+
+
+//----- RBAC
+func (c *K8sClient)CheckUserRole( userName string  , userGroupName []string , checkVerb VerbType ,	checkResName string, checkSubResName string ,checkResInstanceName string , checkResApiGroup string , checkResNamespace string ) ( allowed bool , reason string , e error )
+
+func (c *K8sClient)CheckSelfRole(  checkVerb VerbType ,	checkResName string, checkSubResName string ,checkResInstanceName string , checkResApiGroup string , checkResNamespace string ) ( allowed bool , reason string , e error )
+
+
+*/
+
+
+//=======================================================
 
 var (
 	//for log
@@ -99,7 +148,16 @@ func (c *K8sClient) AutoConfig( )  error  {
 	var config *rest.Config
 	var err error 
 
-	if ExistDir(ScInPodPath)==true {
+
+	if existFile(KubeConfigPath)==true {
+		log("Outside of pod , try to get config from kube config file \n")
+
+		config, err = clientcmd.BuildConfigFromFlags("", KubeConfigPath)
+		if err != nil {
+			return fmt.Errorf("failed to get config from kube config=%v , info=%v" , KubeConfigPath , err )
+		}
+
+	}else if ExistDir(ScInPodPath)==true {
 		log("In pod , try to get config from serviceaccount \n")
 
 		config, err = rest.InClusterConfig()
@@ -107,13 +165,6 @@ func (c *K8sClient) AutoConfig( )  error  {
 			return fmt.Errorf("failed to get config from serviceaccount=%v , info=%v" , ScInPodPath , err )
 		}
 
-	}else if existFile(KubeConfigPath)==true {
-		log("Outside of pod , try to get config from kube config file \n")
-
-		config, err = clientcmd.BuildConfigFromFlags("", KubeConfigPath)
-		if err != nil {
-			return fmt.Errorf("failed to get config from kube config=%v , info=%v" , KubeConfigPath , err )
-		}
 
 	}else{
 		return fmt.Errorf("failed to get config " )
@@ -129,6 +180,56 @@ func (c *K8sClient) AutoConfig( )  error  {
 
 //=============namespace=======================
 
+
+//=============node=======================
+/*
+output:
+	nodeList [{"Name":..}]
+	nodeDetailList []Node  // struct defination: https://godoc.org/k8s.io/api/core/v1#Node
+*/
+func (c *K8sClient)GetNodes(  ) (  nodeList []map[string]string , nodeDetailList []corev1.Node , e error ){
+
+	if c.Config == nil {
+		e=fmt.Errorf("struct K8sClient is not initialized correctly , Config==nil " )
+		return
+	}
+	client, e1 := kubernetes.NewForConfig(c.Config)
+	if e1 != nil {
+		e=fmt.Errorf("failed to NewForConfig, info=%v , config=%v " , e1 , c.Config )
+		return
+	}
+
+	// https://godoc.org/k8s.io/client-go/kubernetes/typed/core/v1#CoreV1Client.Nodes
+	info , err := client.CoreV1().Nodes().List(  metav1.ListOptions{})
+	if err != nil {
+		e=fmt.Errorf("%v" , err )
+		return
+	}
+	if info==nil {
+		return
+	}
+
+	for _ , v := range info.Items {
+
+		internalIp:=""
+
+		for _ , m := range v.Status.Addresses {
+			if m.Type == corev1.NodeInternalIP {
+				internalIp=m.Address
+				break
+			}
+		}
+
+		nodeList=append( nodeList , map[string]string {
+			"Name": v.ObjectMeta.Name ,
+			"NodeIp": internalIp ,
+		})
+	}
+
+	nodeDetailList=info.Items
+
+	return
+}
 
 //=============pod=======================
 /*
@@ -157,7 +258,7 @@ func (c *K8sClient)GetPods( namespace string ) (  podNameList []map[string]strin
 		return
 	}
 
-	//https://godoc.org/k8s.io/client-go/kubernetes/typed/core/v1#PodInterface
+	// https://godoc.org/k8s.io/client-go/kubernetes/typed/core/v1#PodInterface
 	pods, err := client.CoreV1().Pods(namespace).List(metav1.ListOptions{})
 	if err != nil {
 		e=fmt.Errorf("%v" , err )
