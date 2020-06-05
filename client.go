@@ -3,9 +3,11 @@ import (
 	"os"
 	"fmt"
 	"path/filepath"
-	"runtime"
+	goRuntime "runtime"
 	"strings"
 	"strconv"
+	"context"
+	"time"
 
 	"k8s.io/client-go/rest"	
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -23,6 +25,11 @@ import (
 
 	authorizationClientv1 "k8s.io/client-go/kubernetes/typed/authorization/v1"
 	authorizationv1 "k8s.io/api/authorization/v1"
+
+	kubeinformers "k8s.io/client-go/informers"
+	cache "k8s.io/client-go/tools/cache"
+	//"k8s.io/apimachinery/pkg/labels"
+
 )
 
 //=====================================================
@@ -32,9 +39,17 @@ https://github.com/kubernetes/client-go
 godoc
 https://godoc.org/k8s.io/client-go/kubernetes
 
+重要的库
+https://godoc.org/k8s.io/api/core/v1  关于容器、yam , configmap 的一些基本结构
+https://godoc.org/k8s.io/api/apps/v1  APIGROUP apps 的一些结构，如 daemonset , deployment , replicaset 等资源
 
+https://godoc.org/k8s.io/client-go/informers
+
+
+
+!!!!!!!!!!!!!!!!!!!!!!!!
 example: https://github.com/kubernetes/client-go/tree/master/examples
-
+!!!!!!!!!!!!!!!!!!!!!!!!
 
 
 
@@ -48,7 +63,7 @@ func (c *K8sClient)CheckPodHealthy( namespace string , podName string ) (  exist
 #使用传统的方式，deployment的数据结构定义固定，虽然 不和 版本耦合
 func (c *K8sClient)GetDeploymentTyped( namespace string ,  deploymentName string ) (  deploymentBasicInfo []map[string]string , deploymentDetailList  []appsv1.Deployment , e error )
 
-#使用灵活的方式，deployment的数据结构定义 不固定，和 版本耦合
+#使用灵活的方式，使用 灵活的 unstructured.Unstructured 结构体来代表  deployment的数据结构
 func (c *K8sClient)GetDeployment( namespace string ,  deploymentName string ) (  deploymentBasicInfo []map[string]string , deploymentDetailList  []unstructured.Unstructured , e error )
 
 func (c *K8sClient)CreateDeploymentTyped( namespace string , deploymentSpec *appsv1.Deployment ) ( e error )
@@ -68,6 +83,8 @@ func (c *K8sClient)UpdateDeployment( namespace string , deploymentName string , 
 func (c *K8sClient)CheckUserRole( userName string  , userGroupName []string , checkVerb VerbType ,	checkResName string, checkSubResName string ,checkResInstanceName string , checkResApiGroup string , checkResNamespace string ) ( allowed bool , reason string , e error )
 
 func (c *K8sClient)CheckSelfRole(  checkVerb VerbType ,	checkResName string, checkSubResName string ,checkResInstanceName string , checkResApiGroup string , checkResNamespace string ) ( allowed bool , reason string , e error )
+
+
 
 
 */
@@ -106,10 +123,10 @@ func log( format string, a ...interface{} ) (n int, err error) {
     if EnableLog {
 
 		prefix := ""
-	    funcName,filepath ,line,ok := runtime.Caller(1)
+	    funcName,filepath ,line,ok := goRuntime.Caller(1)
 	    if ok {
 	    	file:=getFileName(filepath)
-	    	funcname:=getFileName(runtime.FuncForPC(funcName).Name())
+	    	funcname:=getFileName(goRuntime.FuncForPC(funcName).Name())
 	    	prefix += "[" + file + " " + funcname + " " + strconv.Itoa(line) +  "]     "
 	    }
 
@@ -199,8 +216,11 @@ func (c *K8sClient)GetNodes(  ) (  nodeList []map[string]string , nodeDetailList
 		return
 	}
 
+	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second) 
+
 	// https://godoc.org/k8s.io/client-go/kubernetes/typed/core/v1#CoreV1Client.Nodes
-	info , err := client.CoreV1().Nodes().List(  metav1.ListOptions{})
+	// https://github.com/kubernetes/client-go/blob/master/kubernetes/typed/core/v1/node.go#L40
+	info , err := client.CoreV1().Nodes().List( ctx ,  metav1.ListOptions{})
 	if err != nil {
 		e=fmt.Errorf("%v" , err )
 		return
@@ -258,8 +278,11 @@ func (c *K8sClient)GetPods( namespace string ) (  podNameList []map[string]strin
 		return
 	}
 
+	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second) 
+
 	// https://godoc.org/k8s.io/client-go/kubernetes/typed/core/v1#PodInterface
-	pods, err := client.CoreV1().Pods(namespace).List(metav1.ListOptions{})
+	// https://github.com/kubernetes/client-go/blob/master/kubernetes/typed/core/v1/pod.go#L40
+	pods, err := client.CoreV1().Pods(namespace).List( ctx , metav1.ListOptions{})
 	if err != nil {
 		e=fmt.Errorf("%v" , err )
 		return
@@ -317,7 +340,10 @@ func (c *K8sClient)CheckPodHealthy( namespace string , podName string ) (  exist
 		return
 	}
 
-	_, err := Client.CoreV1().Pods(namespace).Get(podName, metav1.GetOptions{})
+	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second) 
+
+	// https://github.com/kubernetes/client-go/blob/master/kubernetes/typed/core/v1/pod.go#L71
+	_, err := Client.CoreV1().Pods(namespace).Get( ctx , podName, metav1.GetOptions{})
 	if errors.IsNotFound(err) {
 		e=fmt.Errorf( "Pod %s in namespace %s not found\n", podName, namespace )
 		return
@@ -376,9 +402,11 @@ func (c *K8sClient)GetDeploymentTyped( namespace string ,  deploymentName string
 			log("get all deployment from namesapces=%s \n" , namespace )
 		}
 
+		ctx, _ := context.WithTimeout(context.Background(), 5*time.Second) 
+
 		// https://godoc.org/k8s.io/client-go/kubernetes/typed/apps/v1#DeploymentInterface 
 		// https://godoc.org/k8s.io/apimachinery/pkg/apis/meta/v1#ListOptions
-		result, err  := Client.AppsV1().Deployments(namespace).List( metav1.ListOptions{} )
+		result, err  := Client.AppsV1().Deployments(namespace).List( ctx ,  metav1.ListOptions{} )
 		if err != nil {
 			e=fmt.Errorf( "%v", err )
 			return
@@ -406,9 +434,11 @@ func (c *K8sClient)GetDeploymentTyped( namespace string ,  deploymentName string
 			log("get deployment %v from namesapces=%s \n" , deploymentName , namespace )
 		}
 
+		ctx, _ := context.WithTimeout(context.Background(), 5*time.Second) 
+
 		// https://godoc.org/k8s.io/client-go/kubernetes/typed/apps/v1#DeploymentInterface 
 		// https://godoc.org/k8s.io/apimachinery/pkg/apis/meta/v1#ListOptions
-		v, err  := Client.AppsV1().Deployments(namespace).Get( deploymentName ,  metav1.GetOptions{} )
+		v, err  := Client.AppsV1().Deployments(namespace).Get( ctx , deploymentName ,  metav1.GetOptions{} )
 		if err != nil {
 			e=fmt.Errorf( "%v", err )
 			return
@@ -469,10 +499,13 @@ func (c *K8sClient)GetDeployment( namespace string ,  deploymentName string ) ( 
 			log("get all deployment from namesapces=%s \n" , namespace )
 		}
 
+		ctx, _ := context.WithTimeout(context.Background(), 5*time.Second) 
+
+
 		// https://godoc.org/k8s.io/api/apps/v1#Resource
 		// https://godoc.org/k8s.io/client-go/dynamic#Interface
 		// https://godoc.org/k8s.io/client-go/dynamic#NamespaceableResourceInterface
-		list, err := Client.Resource(deploymentRes).Namespace(namespace).List(metav1.ListOptions{})
+		list, err := Client.Resource(deploymentRes).Namespace(namespace).List( ctx , metav1.ListOptions{})
 		if err != nil {
 			e=fmt.Errorf(" info=%v  " , err  )
 			return
@@ -519,9 +552,11 @@ func (c *K8sClient)GetDeployment( namespace string ,  deploymentName string ) ( 
 			log("get deployment %v from namesapces=%s \n" , deploymentName , namespace )
 		}
 
+		ctx, _ := context.WithTimeout(context.Background(), 5*time.Second) 
+
 		// https://godoc.org/k8s.io/api/apps/v1#Resource
 		// https://godoc.org/k8s.io/client-go/dynamic#NamespaceableResourceInterface
-		d, err := Client.Resource(deploymentRes).Namespace(namespace).Get(deploymentName, metav1.GetOptions{})
+		d, err := Client.Resource(deploymentRes).Namespace(namespace).Get( ctx , deploymentName, metav1.GetOptions{})
 		if err != nil {
 			e=fmt.Errorf(" info=%v  " , err  )
 			return
@@ -572,9 +607,11 @@ func (c *K8sClient)CreateDeploymentTyped( namespace string , deploymentSpec *app
 		return
 	}
 
+	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second) 
 
+	// https://github.com/kubernetes/client-go/blob/master/kubernetes/typed/apps/v1/deployment.go#L117
 	//type DeploymentInterface:  https://godoc.org/k8s.io/client-go/kubernetes/typed/apps/v1#DeploymentInterface
-	info , err := Client.AppsV1().Deployments(namespace).Create(deploymentSpec) 
+	info , err := Client.AppsV1().Deployments(namespace).Create(ctx, deploymentSpec , metav1.CreateOptions{} ) 
 	if err != nil {
 		e=fmt.Errorf( "%v", err )
 		return
@@ -611,12 +648,15 @@ func (c *K8sClient)CreateDeployment( namespace string , deploymentYaml *unstruct
 		return
 	}
 
+	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second) 
+
+
 	// https://godoc.org/k8s.io/apimachinery/pkg/runtime/schema
 	// https://godoc.org/k8s.io/apimachinery/pkg/runtime/schema#GroupVersionResource
 	deploymentRes := schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "deployments"}
 	// https://godoc.org/k8s.io/api/apps/v1#Resource
 	// https://godoc.org/k8s.io/client-go/dynamic#NamespaceableResourceInterface
-	result, err := Client.Resource(deploymentRes).Namespace(namespace).Create(deploymentYaml, metav1.CreateOptions{})
+	result, err := Client.Resource(deploymentRes).Namespace(namespace).Create(ctx , deploymentYaml, metav1.CreateOptions{})
 	if err != nil {
 		e=fmt.Errorf(" info=%v  " , err  )
 		return
@@ -653,10 +693,13 @@ func (c *K8sClient)DelDeploymentTyped( namespace string , deploymentName string 
 	// https://godoc.org/k8s.io/apimachinery/pkg/apis/meta/v1#DeletionPropagation
 	deletePolicy := metav1.DeletePropagationForeground
 
+	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second) 
+
 	//type DeploymentInterface:  https://godoc.org/k8s.io/client-go/kubernetes/typed/apps/v1#DeploymentInterface
-	err := Client.AppsV1().Deployments(namespace).Delete(deploymentName , 
+	// https://github.com/kubernetes/client-go/blob/master/kubernetes/typed/apps/v1/deployment.go#L160
+	err := Client.AppsV1().Deployments(namespace).Delete(ctx , deploymentName , 
 			// https://godoc.org/k8s.io/apimachinery/pkg/apis/meta/v1#DeleteOptions
-			&metav1.DeleteOptions{
+			metav1.DeleteOptions{
 				PropagationPolicy: &deletePolicy    })
 	if err != nil {
 		e=fmt.Errorf( "%v", err )
@@ -700,12 +743,15 @@ func (c *K8sClient)DelDeployment( namespace string , deploymentName string ) ( e
 	// https://godoc.org/k8s.io/apimachinery/pkg/apis/meta/v1#DeletionPropagation
 	deletePolicy := metav1.DeletePropagationForeground
 	// https://godoc.org/k8s.io/apimachinery/pkg/apis/meta/v1#DeleteOptions
-	deleteOptions := &metav1.DeleteOptions{
+	deleteOptions := metav1.DeleteOptions{
 		PropagationPolicy: &deletePolicy,
 	}
+
+	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second) 
+
 	// https://godoc.org/k8s.io/api/apps/v1#Resource
 	// https://godoc.org/k8s.io/client-go/dynamic#NamespaceableResourceInterface	
-	if err := Client.Resource(deploymentRes).Namespace(namespace).Delete(deploymentName, deleteOptions); err != nil {
+	if err := Client.Resource(deploymentRes).Namespace(namespace).Delete(ctx , deploymentName, deleteOptions); err != nil {
 		e=fmt.Errorf(" info=%v  " , err  )
 		return
 	}
@@ -761,9 +807,11 @@ func (c *K8sClient)UpdateDeploymentTyped( namespace string , deploymentName stri
 		}
 		//log("%v\n" , result )
 
+		ctx, _ := context.WithTimeout(context.Background(), 5*time.Second) 
 
 		//type DeploymentInterface:  https://godoc.org/k8s.io/client-go/kubernetes/typed/apps/v1#DeploymentInterface
-		_, err := Client.AppsV1().Deployments(namespace).Update(&result )
+		// https://github.com/kubernetes/client-go/blob/master/kubernetes/typed/apps/v1/deployment.go#L130
+		_, err := Client.AppsV1().Deployments(namespace).Update(ctx , &result , metav1.UpdateOptions{} )
 		if err != nil {
 			return fmt.Errorf( "failed to update deploymen=%v , info=%v " , deploymentName , err )
 		}
@@ -829,12 +877,14 @@ func (c *K8sClient)UpdateDeployment( namespace string , deploymentName string , 
 		//log("%v\n" , result )
 
 
+		ctx, _ := context.WithTimeout(context.Background(), 5*time.Second) 
+
 		// https://godoc.org/k8s.io/apimachinery/pkg/runtime/schema
 		// https://godoc.org/k8s.io/apimachinery/pkg/runtime/schema#GroupVersionResource
 		deploymentRes := schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "deployments"}
 		// https://godoc.org/k8s.io/api/apps/v1#Resource
 		// https://godoc.org/k8s.io/client-go/dynamic#NamespaceableResourceInterface
-		_, err := Client.Resource(deploymentRes).Namespace(namespace).Update(&result, metav1.UpdateOptions{})
+		_, err := Client.Resource(deploymentRes).Namespace(namespace).Update(ctx , &result, metav1.UpdateOptions{})
 		if err != nil {
 			return fmt.Errorf( "failed to update deploymen=%v , info=%v " , deploymentName , err )
 		}
@@ -948,13 +998,13 @@ func (c *K8sClient)CheckUserRole( userName string  , userGroupName []string , ch
 		return
 	}
 
-	var sar *authorizationv1.SubjectAccessReview
+	var sar authorizationv1.SubjectAccessReview
 
 	if strings.HasPrefix(checkResName, "/")==false {
 		// ResourceURL
 		log("check for Resource %s \n", checkResName )
 
-		sar = &authorizationv1.SubjectAccessReview{  // https://godoc.org/k8s.io/api/authorization/v1#SubjectAccessReview
+		sar = authorizationv1.SubjectAccessReview{  // https://godoc.org/k8s.io/api/authorization/v1#SubjectAccessReview
 			Spec: authorizationv1.SubjectAccessReviewSpec{   // https://godoc.org/k8s.io/api/authorization/v1#SubjectAccessReviewSpec
 				User: userName ,  // check for a user
 				Groups: userGroupName , // check for a user group
@@ -977,7 +1027,7 @@ func (c *K8sClient)CheckUserRole( userName string  , userGroupName []string , ch
 		// NonResourceURL
 		log("check for NonResource %s \n", checkResName )
 
-		sar = &authorizationv1.SubjectAccessReview{  // https://godoc.org/k8s.io/api/authorization/v1#SubjectAccessReview
+		sar = authorizationv1.SubjectAccessReview{  // https://godoc.org/k8s.io/api/authorization/v1#SubjectAccessReview
 			Spec: authorizationv1.SubjectAccessReviewSpec{   // https://godoc.org/k8s.io/api/authorization/v1#SubjectAccessReviewSpec
 				User: userName ,  // check for a user
 				Groups: userGroupName , // check for a user group
@@ -992,9 +1042,11 @@ func (c *K8sClient)CheckUserRole( userName string  , userGroupName []string , ch
 
 	}
 
+	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second) 
+
 	// https://godoc.org/k8s.io/client-go/kubernetes/typed/authorization/v1#AuthorizationV1Client.SubjectAccessReviews
 	// https://godoc.org/k8s.io/client-go/kubernetes/typed/authorization/v1#SubjectAccessReviewExpansion
-	response, err := client.SubjectAccessReviews().Create(sar)
+	response, err := client.SubjectAccessReviews().Create(ctx , &sar , metav1.CreateOptions{} )
 	if err != nil {
 		e=err
 		return 
@@ -1082,9 +1134,12 @@ func (c *K8sClient)CheckSelfRole(  checkVerb VerbType ,	checkResName string, che
 		}
 	}
 
+	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second) 
+
+
 	// https://godoc.org/k8s.io/client-go/kubernetes/typed/authorization/v1#AuthorizationV1Client.SelfSubjectAccessReviews
 	// https://godoc.org/k8s.io/client-go/kubernetes/typed/authorization/v1#SelfSubjectAccessReviewExpansion
-	response, err := client.SelfSubjectAccessReviews().Create(sar)
+	response, err := client.SelfSubjectAccessReviews().Create( ctx , sar , metav1.CreateOptions{} )
 	if err != nil {
 		e=err
 		return 
@@ -1104,6 +1159,97 @@ func (c *K8sClient)CheckSelfRole(  checkVerb VerbType ,	checkResName string, che
 
 	return 
 }
+
+
+//----------------- informer -----------------------
+
+// informer 就是使用了 K8S的 watch机制，把关系的K8S资源 同步到本地的缓存中，实现查看
+//example: 
+// https://github.com/kubernetes/client-go/blob/3d5c80942cce510064da1ab62c579e190a0230fd/metadata/metadatainformer/informer_test.go
+// https://github.com/kubernetes/client-go/blob/af50d22222d331aaeee988a60a0707a4a4abaf26/examples/fake-client/main_test.go
+//  https://github.com/kubernetes/sample-controller/blob/master/main.go
+// resourceType: https://github.com/kubernetes/client-go/blob/be97aaa976ad58026e66cd9af5aaf1b006081f09/informers/generic.go#L87
+func (c *K8sClient)CreateInformer(  resourceType  schema.GroupVersionResource ,  EventHandlerFuncs *cache.ResourceEventHandlerFuncs )  ( lister cache.GenericLister , stopWatchCh chan struct{} ,  e error ) {
+
+	if c.Config == nil {
+		e=fmt.Errorf("struct K8sClient is not initialized correctly , Config==nil " )
+		return
+	}
+
+	Client, e1 := kubernetes.NewForConfig(c.Config)
+	if e1 != nil {
+		e=fmt.Errorf("failed to NewForConfig, info=%v , config=%v " , e1 , c.Config )
+		return
+	}
+
+    stopWatchCh = make(chan struct{})
+
+	//=======================================
+
+	// https://github.com/kubernetes/client-go/blob/af50d22222d331aaeee988a60a0707a4a4abaf26/informers/factory.go#L110
+	// 第二个参数，是resync ， 如果不为0，就会定期去 list， 即使被监控对象没发生变化，发现都会被定期调用 UpdateFunc 回调 
+	kubeInformerFactory:=kubeinformers.NewSharedInformerFactoryWithOptions(Client , time.Second*0 ) 
+
+
+	//=======================================
+
+	// 动态生成指定 资源类型的 informer
+	// https://github.com/kubernetes/client-go/blob/master/informers/factory.go#L187
+	// https://github.com/kubernetes/client-go/blob/be97aaa976ad58026e66cd9af5aaf1b006081f09/informers/generic.go#L87
+	GenericInformer, er := kubeInformerFactory.ForResource( resourceType )
+	// informer 就是 封装了 cache.NewSharedIndexInformer
+	if er!=nil {
+		e=fmt.Errorf(" failed to get informer for specified resourceType : %v " , er )
+		return
+	}
+
+	// 静态 生成指定 资源类型的 informer 
+	// https://github.com/kubernetes/client-go/blob/af50d22222d331aaeee988a60a0707a4a4abaf26/informers/factory.go#L188
+	// podInformer := informers.Core().V1().Pods().Informer()
+	// podInformer.AddEventHandler( ...  )
+
+
+	//=======================================
+
+	// watch发生事件时，可使用回调handler
+	if EventHandlerFuncs!=nil {
+		// https://github.com/kubernetes/client-go/blob/be97aaa976ad58026e66cd9af5aaf1b006081f09/informers/generic.go#L76
+		// https://godoc.org/k8s.io/client-go/tools/cache#SharedIndexInformer
+		// https://godoc.org/k8s.io/client-go/tools/cache#ResourceEventHandlerFuncs
+		// https://github.com/kubernetes/client-go/blob/master/tools/cache/shared_informer.go#L137
+		GenericInformer.Informer().AddEventHandler( EventHandlerFuncs)
+	}
+
+	//=======================================
+
+	// notice that there is no need to run Start methods in a separate goroutine. (i.e. go kubeInformerFactory.Start(stopWatchCh)
+	// Start method is non-blocking and runs all registered informers in a dedicated goroutine.
+	// 启动 informer，list & watch
+	// stopWatchCh 关闭时，停止运行
+	kubeInformerFactory.Start(stopWatchCh)
+
+	//=======================================
+    // 从 apiserver 同步资源，即 list 
+    // https://github.com/kubernetes/client-go/blob/425ea3e5d030326fecb2994e026a4ead72cadef3/metadata/metadatainformer/informer.go#L97
+	//if synced := kubeInformerFactory.WaitForCacheSync(  stopWatchCh  )  ; synced[resourceType] == false {
+	if ! cache.WaitForCacheSync( stopWatchCh , GenericInformer.Informer().HasSynced) {
+		e=fmt.Errorf(" failed to WaitForCacheSync for specified resourceType : %v " , er )
+		return
+	}
+
+	//=======================================
+
+	// 生成 获取 本地cache 资源数据的 接口
+	// https://github.com/kubernetes/client-go/blob/be97aaa976ad58026e66cd9af5aaf1b006081f09/informers/generic.go#L81
+	lister=GenericInformer.Lister()
+
+
+    return 
+
+}
+
+
+
 
 
 

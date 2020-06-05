@@ -13,6 +13,8 @@ import (
 
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	cache "k8s.io/client-go/tools/cache"
+	"k8s.io/apimachinery/pkg/labels"
 
 )
 
@@ -621,6 +623,120 @@ func Test_5(t *testing.T){
 	}else {
 		fmt.Printf("allowed?%v , reason: %s \n" ,allowed , reason )
 	}
+
+
+
+}
+
+
+//==================================================
+
+
+func Test_info_configmap(t *testing.T){
+
+	k8s.EnableLog=false
+	k:=k8s.K8sClient{}
+
+	err:=k.AutoConfig()
+	if err!=nil {
+		fmt.Println(  "failed to create k8s client" )
+		t.FailNow()
+	}
+
+
+
+	//------------ 当本地 cache  发生资源变化时，事件回调函数
+
+	//注意，当创建informer后，本地的cache 就会开始从K8S 同步 并添加 现有的 资源到本地的 cache 
+	// 所以，你会发现，当创建informer初始 ，HandlerAddFunc 回调就会被 调用多次
+	AddEventChannel := make(chan *corev1.ConfigMap , 100 )
+	HandlerAddFunc := func(obj interface{}) {
+				// 转化成相应的资源
+				// https://godoc.org/k8s.io/api/core/v1#ConfigMap
+				instance := obj.(*corev1.ConfigMap )
+				fmt.Printf(" new  instance evenvt : name=%v , nameSpace=%v  \n", 
+						instance.ObjectMeta.Name  , instance.ObjectMeta.Namespace   )
+
+				// 通过channel 同步到外部
+				AddEventChannel <- instance
+			}
+
+	DeleteFunc := func(obj interface{}) {
+				// 转化成相应的资源
+				// https://godoc.org/k8s.io/api/core/v1#ConfigMap
+				instance := obj.(*corev1.ConfigMap )
+				fmt.Printf(" del  instance evenvt : name=%v , nameSpace=%v ,  data=%v \n", 
+						instance.ObjectMeta.Name  , instance.ObjectMeta.Namespace  , instance.Data )
+			}
+
+	UpdateFunc := func( oldObj, newObj interface{})  {
+				// 转化成相应的资源
+				newInstance := newObj.(*corev1.ConfigMap )
+				//oldInstance := oldObj.(*corev1.ConfigMap )
+				fmt.Printf(" update  instance evenvt : name=%v  ; new data=%v \n" , 
+						 newInstance.ObjectMeta.Name ,  newInstance.Data   )
+			}
+
+	EventHandlerFuncs:=&cache.ResourceEventHandlerFuncs{
+		AddFunc: HandlerAddFunc , 
+		UpdateFunc: UpdateFunc , 
+		DeleteFunc: DeleteFunc ,
+	}
+	//EventHandlerFuncs:= (*cache.ResourceEventHandlerFuncs)nil
+
+	// https://github.com/kubernetes/client-go/blob/be97aaa976ad58026e66cd9af5aaf1b006081f09/informers/generic.go#L87
+	resType:= corev1.SchemeGroupVersion.WithResource("configmaps")
+
+	// 注册 informer , 开始watch 全部 namespaces 下的 configmaps 信息
+	lister , stopWatchCh , e:=k.CreateInformer(resType , EventHandlerFuncs ) 
+	if e!=nil {
+		fmt.Printf(  "failed : %v " , e )
+		t.FailNow()
+	}
+	// 关闭watch
+	defer close(stopWatchCh) 
+
+
+    fmt.Printf("------------------------- \n")
+	time.Sleep(30*time.Second )
+	//======= 通过 lister，配合 label selector ，  能获取当前最新的 指定资源 数据
+     // 从 lister 中获取所有 items
+     // https://godoc.org/k8s.io/client-go/tools/cache#GenericLister
+     // https://github.com/kubernetes/client-go/blob/be97aaa976ad58026e66cd9af5aaf1b006081f09/tools/cache/listers.go#L112
+     // List(selector labels.Selector) (ret []runtime.Object, err error)
+     // https://github.com/kubernetes/client-go/tree/be97aaa976ad58026e66cd9af5aaf1b006081f09/listers
+     // 可基于 lable 来选择性的返回 objects across namespaces
+    instanceList, e2 := lister.List( labels.Everything() )
+    if e2 != nil {
+		fmt.Printf(  "failed : %v " , e2 )
+		t.FailNow()
+    }
+    for n , item := range instanceList {
+    	instance:=item.(*corev1.ConfigMap)
+	    fmt.Printf("%d : %v \n ", n ,  instance.ObjectMeta.Name   )    	
+    }
+
+
+    fmt.Printf("------------------------- \n")
+    // 通过Get方法，嫩头获取指定的 资源实例， name="nameSpace/instanceName"
+    // https://github.com/kubernetes/client-go/blob/be97aaa976ad58026e66cd9af5aaf1b006081f09/tools/cache/listers.go#L116
+    instance, _ := lister.Get( "kube-system/kube-proxy" )
+	fmt.Printf(" %v \n ",  instance   )    	
+    
+
+    fmt.Printf("------------------------- \n")
+    // 通过 ByNamespace 方法, 能获取指定的namespace下的 资源实例
+    // https://github.com/kubernetes/client-go/blob/be97aaa976ad58026e66cd9af5aaf1b006081f09/tools/cache/listers.go#L118    
+    instanceList1, e3 := lister.ByNamespace( "default" ).List( labels.Everything() )
+    if e3 != nil {
+		fmt.Printf(  "failed : %v " , e3 )
+		t.FailNow()
+    }
+    for n , item := range instanceList1 {
+    	instance:=item.(*corev1.ConfigMap)
+	    fmt.Printf("%d : %v \n ", n ,  instance.ObjectMeta.Name   )    	
+    }
+
 
 
 
