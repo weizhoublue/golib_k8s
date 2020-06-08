@@ -670,11 +670,18 @@ func Test_info_configmap(t *testing.T){
 			}
 
 	UpdateFunc := func( oldObj, newObj interface{})  {
-				// 转化成相应的资源
-				newInstance := newObj.(*corev1.ConfigMap )
-				//oldInstance := oldObj.(*corev1.ConfigMap )
+
+				// 如果 informer使用了 sync ， 那么需要添加如下 检查代码，以过滤掉无用的事件
+				newDepl := newObj.(*corev1.ConfigMap)
+				oldDepl := oldObj.(*corev1.ConfigMap)
+				if newDepl.ResourceVersion == oldDepl.ResourceVersion {
+					// Periodic resync will send update events for all known Deployments.
+					// Two different versions of the same Deployment will always have different RVs.
+					return
+				}
+
 				fmt.Printf(" update  instance evenvt : name=%v  ; new data=%v \n" , 
-						 newInstance.ObjectMeta.Name ,  newInstance.Data   )
+						 newDepl.ObjectMeta.Name ,  newDepl.Data   )
 			}
 
 	EventHandlerFuncs:=&cache.ResourceEventHandlerFuncs{
@@ -688,7 +695,7 @@ func Test_info_configmap(t *testing.T){
 	resType:= corev1.SchemeGroupVersion.WithResource("configmaps")
 
 	// 注册 informer , 开始watch 全部 namespaces 下的 configmaps 信息
-	lister , stopWatchCh , e:=k.CreateInformer(resType , EventHandlerFuncs ) 
+	genericlister , stopWatchCh , e:=k.CreateInformer(resType , EventHandlerFuncs ) 
 	if e!=nil {
 		fmt.Printf(  "failed : %v " , e )
 		t.FailNow()
@@ -706,7 +713,7 @@ func Test_info_configmap(t *testing.T){
      // List(selector labels.Selector) (ret []runtime.Object, err error)
      // https://github.com/kubernetes/client-go/tree/be97aaa976ad58026e66cd9af5aaf1b006081f09/listers
      // 可基于 lable 来选择性的返回 objects across namespaces
-    instanceList, e2 := lister.List( labels.Everything() )
+    instanceList, e2 := genericlister.List( labels.Everything() )
     if e2 != nil {
 		fmt.Printf(  "failed : %v " , e2 )
 		t.FailNow()
@@ -720,14 +727,14 @@ func Test_info_configmap(t *testing.T){
     fmt.Printf("------------------------- \n")
     // 通过Get方法，嫩头获取指定的 资源实例， name="nameSpace/instanceName"
     // https://github.com/kubernetes/client-go/blob/be97aaa976ad58026e66cd9af5aaf1b006081f09/tools/cache/listers.go#L116
-    instance, _ := lister.Get( "kube-system/kube-proxy" )
+    instance, _ := genericlister.Get( "kube-system/kube-proxy" )
 	fmt.Printf(" %v \n ",  instance   )    	
     
 
     fmt.Printf("------------------------- \n")
     // 通过 ByNamespace 方法, 能获取指定的namespace下的 资源实例
     // https://github.com/kubernetes/client-go/blob/be97aaa976ad58026e66cd9af5aaf1b006081f09/tools/cache/listers.go#L118    
-    instanceList1, e3 := lister.ByNamespace( "default" ).List( labels.Everything() )
+    instanceList1, e3 := genericlister.ByNamespace( "default" ).List( labels.Everything() )
     if e3 != nil {
 		fmt.Printf(  "failed : %v " , e3 )
 		t.FailNow()

@@ -1241,6 +1241,7 @@ func (c *K8sClient)CreateInformer(  resourceType  schema.GroupVersionResource , 
 
 	// 生成 获取 本地cache 资源数据的 接口
 	// https://github.com/kubernetes/client-go/blob/be97aaa976ad58026e66cd9af5aaf1b006081f09/informers/generic.go#L81
+	// https://godoc.org/k8s.io/client-go/tools/cache#GenericLister
 	lister=GenericInformer.Lister()
 
 
