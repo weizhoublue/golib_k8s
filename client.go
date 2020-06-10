@@ -162,6 +162,13 @@ func ExistDir( dirPath string ) bool {
 
 func (c *K8sClient) AutoConfig( )  error  {
 
+	// 也可使用如下简单的代码实现
+	// import "k8s.io/client-go/tools/clientcmd"
+	// cfg, e1 := clientcmd.BuildConfigFromFlags("", "")
+ // 	if e1 != nil {
+ // 		klog.Fatalf("Error building kubeconfig: %s", e1.Error())
+ // 	}
+
 	var config *rest.Config
 	var err error 
 
@@ -1233,7 +1240,7 @@ func (c *K8sClient)CreateInformer(  resourceType  schema.GroupVersionResource , 
     // https://github.com/kubernetes/client-go/blob/425ea3e5d030326fecb2994e026a4ead72cadef3/metadata/metadatainformer/informer.go#L97
 	//if synced := kubeInformerFactory.WaitForCacheSync(  stopWatchCh  )  ; synced[resourceType] == false {
 	if ! cache.WaitForCacheSync( stopWatchCh , GenericInformer.Informer().HasSynced) {
-		e=fmt.Errorf(" failed to WaitForCacheSync for specified resourceType : %v " , er )
+		e=fmt.Errorf(" failed to WaitForCacheSync for specified resourceType "  )
 		return
 	}
 
