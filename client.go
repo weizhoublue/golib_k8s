@@ -30,6 +30,7 @@ import (
 	cache "k8s.io/client-go/tools/cache"
 	//"k8s.io/apimachinery/pkg/labels"
 
+
 )
 
 //=====================================================
@@ -54,7 +55,6 @@ example: https://github.com/kubernetes/client-go/tree/master/examples
 
 
 
-func (c *K8sClient) AutoConfig( )  error  
 
 //--------------------- pods
 
@@ -173,18 +173,25 @@ func ExistDir( dirPath string ) bool {
 
 //===========================
 
-func (c *K8sClient) AutoConfig( )  error  {
+func (c *K8sClient) autoConfig( ) error  {
 
 	// 也可使用如下简单的代码实现
 	// import "k8s.io/client-go/tools/clientcmd"
-	// cfg, e1 := clientcmd.BuildConfigFromFlags("", "")
+	// masterUrl:=""
+	// kubeconfigPath:=""
+	// // If neither masterUrl or kubeconfigPath are passed in we fallback to inClusterConfig. 
+	// // If inClusterConfig fails, we fallback to the default config
+	// cfg, e1 := clientcmd.BuildConfigFromFlags(masterUrl , kubeconfigPath )
  // 	if e1 != nil {
- // 		klog.Fatalf("Error building kubeconfig: %s", e1.Error())
+	// 	return e1
  // 	}
+
+	// c.Config=cfg
+	// return nil
+
 
 	var config *rest.Config
 	var err error 
-
 
 	if existFile(KubeConfigPath)==true {
 		log("Outside of pod , try to get config from kube config file \n")
@@ -227,9 +234,12 @@ output:
 func (c *K8sClient)GetNodes(  ) (  nodeList []map[string]string , nodeDetailList []corev1.Node , e error ){
 
 	if c.Config == nil {
-		e=fmt.Errorf("struct K8sClient is not initialized correctly , Config==nil " )
-		return
+		if e1:=c.autoConfig() ; e1 !=nil {
+			e=fmt.Errorf("failed to config : %v " , e )
+			return 
+		}
 	}
+
 	client, e1 := kubernetes.NewForConfig(c.Config)
 	if e1 != nil {
 		e=fmt.Errorf("failed to NewForConfig, info=%v , config=%v " , e1 , c.Config )
@@ -281,8 +291,10 @@ output:
 func (c *K8sClient)ListPods( namespace string ) (  podDetailList map[string]*corev1.Pod , e error ){
 
 	if c.Config == nil {
-		e=fmt.Errorf("struct K8sClient is not initialized correctly , Config==nil " )
-		return
+		if e1:=c.autoConfig() ; e1 !=nil {
+			e=fmt.Errorf("failed to config : %v " , e )
+			return 
+		}
 	}
 
 	if len(namespace)==0 {
@@ -333,9 +345,12 @@ func (c *K8sClient)CheckPodHealthy( namespace string , podName string ) (  exist
 	exist=false
 
 	if c.Config == nil {
-		e=fmt.Errorf("struct K8sClient is not initialized correctly , Config==nil " )
-		return
+		if e1:=c.autoConfig() ; e1 !=nil {
+			e=fmt.Errorf("failed to config : %v " , e )
+			return 
+		}
 	}
+
 
 
 	if len(namespace)==0 {
@@ -393,9 +408,12 @@ func (c *K8sClient)ListConfigmap( namespace string ) (  cmDetailList map[string]
 
 
 	if c.Config == nil {
-		e=fmt.Errorf("struct K8sClient is not initialized correctly , Config==nil " )
-		return
+		if e1:=c.autoConfig() ; e1 !=nil {
+			e=fmt.Errorf("failed to config : %v " , e )
+			return 
+		}
 	}
+
 
 	if len(namespace)==0 {
 		log("get pods from all namespaces \n")
@@ -448,9 +466,12 @@ func (c *K8sClient)GetConfigmap( namespace , name string ) (  cmData *corev1.Con
 
 
 	if c.Config == nil {
-		e=fmt.Errorf("struct K8sClient is not initialized correctly , Config==nil " )
-		return
+		if e1:=c.autoConfig() ; e1 !=nil {
+			e=fmt.Errorf("failed to config : %v " , e )
+			return 
+		}
 	}
+
 
 	if len(namespace)==0 {
 		log("get pods from all namespaces \n")
@@ -479,9 +500,12 @@ func (c *K8sClient)GetConfigmap( namespace , name string ) (  cmData *corev1.Con
 func (c *K8sClient)DeleteConfigmap( namespace , name string  ) ( e error ){
 
 	if c.Config == nil {
-		e=fmt.Errorf("struct K8sClient is not initialized correctly , Config==nil " )
-		return
+		if e1:=c.autoConfig() ; e1 !=nil {
+			e=fmt.Errorf("failed to config : %v " , e )
+			return 
+		}
 	}
+
 
 	if len(namespace)==0 {
 		e=fmt.Errorf("empty namespace "  )
@@ -522,9 +546,12 @@ func (c *K8sClient)DeleteConfigmap( namespace , name string  ) ( e error ){
 func (c *K8sClient)CreateConfigmap( namespace string ,  configmapData *corev1.ConfigMap ) ( result *corev1.ConfigMap , e error ){
 
 	if c.Config == nil {
-		e=fmt.Errorf("struct K8sClient is not initialized correctly , Config==nil " )
-		return
+		if e1:=c.autoConfig() ; e1 !=nil {
+			e=fmt.Errorf("failed to config : %v " , e )
+			return 
+		}
 	}
+
 
 	if len(namespace)==0 {
 		e=fmt.Errorf("empty namespace "  )
@@ -570,9 +597,12 @@ output:
 func (c *K8sClient)ListDeploymentTyped( namespace string  ) (   deploymentDetailList  map[string]*appsv1.Deployment , e error ){
 
 	if c.Config == nil {
-		e=fmt.Errorf("struct K8sClient is not initialized correctly , Config==nil " )
-		return
+		if e1:=c.autoConfig() ; e1 !=nil {
+			e=fmt.Errorf("failed to config : %v " , e )
+			return 
+		}
 	}
+
 
 
 
@@ -628,9 +658,12 @@ output:
 func (c *K8sClient)ListDeployment( namespace string   ) (   deploymentDetailList  map[string]*unstructured.Unstructured , e error ){
 
 	if c.Config == nil {
-		e=fmt.Errorf("struct K8sClient is not initialized correctly , Config==nil " )
-		return
+		if e1:=c.autoConfig() ; e1 !=nil {
+			e=fmt.Errorf("failed to config : %v " , e )
+			return 
+		}
 	}
+
 
 
 	// https://godoc.org/k8s.io/client-go/dynamic
@@ -701,9 +734,12 @@ output:
 func (c *K8sClient)CreateDeploymentTyped( namespace string , deploymentSpec *appsv1.Deployment ) ( e error ){
 
 	if c.Config == nil {
-		e=fmt.Errorf("struct K8sClient is not initialized correctly , Config==nil " )
-		return
+		if e1:=c.autoConfig() ; e1 !=nil {
+			e=fmt.Errorf("failed to config : %v " , e )
+			return 
+		}
 	}
+
 
 
 	if len(namespace)==0 {
@@ -739,9 +775,12 @@ func (c *K8sClient)CreateDeploymentTyped( namespace string , deploymentSpec *app
 func (c *K8sClient)CreateDeployment( namespace string , deploymentYaml *unstructured.Unstructured ) ( e error ){
 
 	if c.Config == nil {
-		e=fmt.Errorf("struct K8sClient is not initialized correctly , Config==nil " )
-		return
+		if e1:=c.autoConfig() ; e1 !=nil {
+			e=fmt.Errorf("failed to config : %v " , e )
+			return 
+		}
 	}
+
 
 	if len(namespace)==0 {
 		e=fmt.Errorf("empty namespace " )
@@ -789,9 +828,12 @@ output:
 func (c *K8sClient)DelDeploymentTyped( namespace string , deploymentName string ) ( e error ){
 
 	if c.Config == nil {
-		e=fmt.Errorf("struct K8sClient is not initialized correctly , Config==nil " )
-		return
+		if e1:=c.autoConfig() ; e1 !=nil {
+			e=fmt.Errorf("failed to config : %v " , e )
+			return 
+		}
 	}
+
 
 
 	Client, e1 := kubernetes.NewForConfig(c.Config)
@@ -828,9 +870,12 @@ func (c *K8sClient)DelDeploymentTyped( namespace string , deploymentName string 
 func (c *K8sClient)DelDeployment( namespace string , deploymentName string ) ( e error ){
 
 	if c.Config == nil {
-		e=fmt.Errorf("struct K8sClient is not initialized correctly , Config==nil " )
-		return
+		if e1:=c.autoConfig() ; e1 !=nil {
+			e=fmt.Errorf("failed to config : %v " , e )
+			return 
+		}
 	}
+
 
 	if len(namespace)==0 {
 		e=fmt.Errorf("empty namespace " )
@@ -877,9 +922,12 @@ func (c *K8sClient)DelDeployment( namespace string , deploymentName string ) ( e
 func (c *K8sClient)UpdateDeploymentTyped( namespace string , deploymentName string , handler func(*appsv1.Deployment)error  ) ( e error ){
 
 	if c.Config == nil {
-		e=fmt.Errorf("struct K8sClient is not initialized correctly , Config==nil " )
-		return
+		if e1:=c.autoConfig() ; e1 !=nil {
+			e=fmt.Errorf("failed to config : %v " , e )
+			return 
+		}
 	}
+
 
 	if len(namespace)==0 {
 		e=fmt.Errorf("empty namespace " )
@@ -944,9 +992,12 @@ func (c *K8sClient)UpdateDeploymentTyped( namespace string , deploymentName stri
 func (c *K8sClient)UpdateDeployment( namespace string , deploymentName string , handler func(*unstructured.Unstructured)error  ) ( e error ){
 
 	if c.Config == nil {
-		e=fmt.Errorf("struct K8sClient is not initialized correctly , Config==nil " )
-		return
+		if e1:=c.autoConfig() ; e1 !=nil {
+			e=fmt.Errorf("failed to config : %v " , e )
+			return 
+		}
 	}
+
 
 	if len(namespace)==0 {
 		e=fmt.Errorf("empty namespace " )
@@ -1089,9 +1140,12 @@ func (c *K8sClient)CheckUserRole( userName string  , userGroupName []string , ch
 	}
 
 	if c.Config == nil {
-		e=fmt.Errorf("struct K8sClient is not initialized correctly , Config==nil " )
-		return
+		if e1:=c.autoConfig() ; e1 !=nil {
+			e=fmt.Errorf("failed to config : %v " , e )
+			return 
+		}
 	}
+
 	if len(userName)==0 && len(userGroupName)==0 {
 		e=fmt.Errorf("empty userName and userGroupName " )
 		return
@@ -1193,9 +1247,12 @@ func (c *K8sClient)CheckSelfRole(  checkVerb VerbType ,	checkResName string, che
 	}
 
 	if c.Config == nil {
-		e=fmt.Errorf("struct K8sClient is not initialized correctly , Config==nil " )
-		return
+		if e1:=c.autoConfig() ; e1 !=nil {
+			e=fmt.Errorf("failed to config : %v " , e )
+			return 
+		}
 	}
+
 	if len(checkResName)==0 {
 		e=fmt.Errorf("empty checkResName " )
 		return
@@ -1283,9 +1340,12 @@ func (c *K8sClient)CheckSelfRole(  checkVerb VerbType ,	checkResName string, che
 func (c *K8sClient)CreateInformer(  resourceType  schema.GroupVersionResource ,  EventHandlerFuncs *cache.ResourceEventHandlerFuncs )  ( lister cache.GenericLister , stopWatchCh chan struct{} ,  e error ) {
 
 	if c.Config == nil {
-		e=fmt.Errorf("struct K8sClient is not initialized correctly , Config==nil " )
-		return
+		if e1:=c.autoConfig() ; e1 !=nil {
+			e=fmt.Errorf("failed to config : %v " , e )
+			return 
+		}
 	}
+
 
 	Client, e1 := kubernetes.NewForConfig(c.Config)
 	if e1 != nil {

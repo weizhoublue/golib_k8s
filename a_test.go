@@ -26,11 +26,6 @@ func Test_1(t *testing.T){
 	k8s.EnableLog=true
 	k:=k8s.K8sClient{}
 
-	err:=k.AutoConfig()
-	if err!=nil {
-		fmt.Println(  "failed to create k8s client" )
-		t.FailNow()
-	}
 
 	namespace:="default"
 	if poddata, err:=k.ListPods(namespace) ; err!=nil {
@@ -56,11 +51,6 @@ func Test_hostPod(t *testing.T){
 	k8s.EnableLog=false
 	k:=k8s.K8sClient{}
 
-	err:=k.AutoConfig()
-	if err!=nil {
-		fmt.Println(  "failed to create k8s client" )
-		t.FailNow()
-	}
 
 	namespace:=""
 	if podlist , err:=k.ListPods(namespace) ; err!=nil {
@@ -83,12 +73,6 @@ func Test_node(t *testing.T){
 	k8s.EnableLog=false
 	k:=k8s.K8sClient{}
 
-	err:=k.AutoConfig()
-	if err!=nil {
-		fmt.Println(  "failed to create k8s client" )
-		t.FailNow()
-	}
-
 	if info , _ , err:=k.GetNodes( ) ; err!=nil {
 		fmt.Println(  err )
 		t.FailNow()
@@ -110,11 +94,7 @@ func Test_2(t *testing.T){
 	k8s.EnableLog=true
 	k:=k8s.K8sClient{}
 
-	err:=k.AutoConfig()
-	if err!=nil {
-		fmt.Println(  "failed to create k8s client" )
-		t.FailNow()
-	}
+
 
 	var namespace string
 
@@ -229,7 +209,7 @@ func Test_2(t *testing.T){
 	//===============  get ==============
 	namespace="default"
 	if deploymentDetailInfo , e:=k.ListDeployment( namespace  ) ; e!=nil {
-		fmt.Println(  err )
+		fmt.Println(  e )
 		t.FailNow()
 	}else{
 
@@ -282,11 +262,7 @@ func Test_3(t *testing.T){
 	k8s.EnableLog=true
 	k:=k8s.K8sClient{}
 
-	err:=k.AutoConfig()
-	if err!=nil {
-		fmt.Println(  "failed to create k8s client" )
-		t.FailNow()
-	}
+
 
 
 	//=============== create deployment ============
@@ -440,11 +416,7 @@ kubectl create clusterrolebinding test32 -n default --clusterrole=test3-clusterr
 	k8s.EnableLog=true
 	k:=k8s.K8sClient{}
 
-	err:=k.AutoConfig()
-	if err!=nil {
-		fmt.Println(  "failed to create k8s client" )
-		t.FailNow()
-	}
+
 
 	//========================== resource
 	userName:="jane"
@@ -555,11 +527,7 @@ func Test_5(t *testing.T){
 	k8s.EnableLog=true
 	k:=k8s.K8sClient{}
 
-	err:=k.AutoConfig()
-	if err!=nil {
-		fmt.Println(  "failed to create k8s client" )
-		t.FailNow()
-	}
+
 
 	//========================== resource
 
@@ -635,11 +603,6 @@ func Test_info_configmap(t *testing.T){
 	k8s.EnableLog=false
 	k:=k8s.K8sClient{}
 
-	err:=k.AutoConfig()
-	if err!=nil {
-		fmt.Println(  "failed to create k8s client" )
-		t.FailNow()
-	}
 
 
 
@@ -756,11 +719,6 @@ func Test_configmap(t *testing.T){
 	k8s.EnableLog=false
 	k:=k8s.K8sClient{}
 
-	err:=k.AutoConfig()
-	if err!=nil {
-		fmt.Println(  "failed to create k8s client" )
-		t.FailNow()
-	}
 
 
 	namespace:="default"
