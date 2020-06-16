@@ -33,11 +33,11 @@ func Test_1(t *testing.T){
 	}
 
 	namespace:="default"
-	if podInfo , _ , err:=k.GetPods(namespace) ; err!=nil {
+	if poddata, err:=k.ListPods(namespace) ; err!=nil {
 		fmt.Println(  err )
 		t.FailNow()
 	}else{
-		fmt.Printf("podInfo=%v \n" , podInfo)
+		fmt.Printf("podInfo=%v \n" , poddata)
 	}
 
 	podName:="test3-nginx-585dbc7464-txjl6"
@@ -63,14 +63,14 @@ func Test_hostPod(t *testing.T){
 	}
 
 	namespace:=""
-	if _ , detail , err:=k.GetPods(namespace) ; err!=nil {
+	if podlist , err:=k.ListPods(namespace) ; err!=nil {
 		fmt.Println(  err )
 		t.FailNow()
 	}else{
 		//fmt.Printf("podInfo=%v \n" , podInfo)
-		for n , v :=range detail {
+		for k , v :=range podlist {
 			fmt.Printf("pod %v : HostNetwork=%v NodeName=%v PodIP=%v Phase=%v podName=%v \n" , 
-				   n, v.Spec.HostNetwork   ,  v.Spec.NodeName , v.Status.PodIP , v.Status.Phase , v.ObjectMeta.Name )
+				  k,   v.Spec.HostNetwork   ,  v.Spec.NodeName , v.Status.PodIP , v.Status.Phase , v.ObjectMeta.Name )
 		}
 	}
 
@@ -228,11 +228,10 @@ func Test_2(t *testing.T){
 
 	//===============  get ==============
 	namespace="default"
-	if deploymentBasicInfo, deploymentDetailInfo , e:=k.GetDeployment( namespace , "" ) ; e!=nil {
+	if deploymentDetailInfo , e:=k.ListDeployment( namespace  ) ; e!=nil {
 		fmt.Println(  err )
 		t.FailNow()
 	}else{
-		fmt.Printf("deploymentBasicInfo=%v\n" , deploymentBasicInfo )
 
 		// show how to get information from unstructured.Unstructured (deploymentDetailInfo)
 		for _ , v := range deploymentDetailInfo {
@@ -378,8 +377,7 @@ func Test_3(t *testing.T){
 
 	// ================= get all deploy for all namespace ================
 	namespace="default"
-	deploymentName=""
-	if deploymentBasicInfo, _ , err:=k.GetDeploymentTyped( namespace , deploymentName ) ; err!=nil {
+	if deploymentBasicInfo , err:=k.ListDeploymentTyped( namespace  ) ; err!=nil {
 		fmt.Println(  err )
 		t.FailNow()
 	}else{
@@ -750,7 +748,73 @@ func Test_info_configmap(t *testing.T){
 }
 
 
+//==================================================
 
 
+func Test_configmap(t *testing.T){
+
+	k8s.EnableLog=false
+	k:=k8s.K8sClient{}
+
+	err:=k.AutoConfig()
+	if err!=nil {
+		fmt.Println(  "failed to create k8s client" )
+		t.FailNow()
+	}
+
+
+	namespace:="default"
+	name:="myconfig"
+	// https://godoc.org/k8s.io/api/core/v1#ConfigMap
+	configmapData:=&corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: name , 
+			Namespace: namespace , 
+			Labels: map[string]string{},
+			Annotations: map[string]string{},
+		},
+		Data: map[string]string {
+			"key": "my value" ,
+		},
+	}
+
+
+
+	k.DeleteConfigmap( namespace ,  name ) 
+	fmt.Println(  "succeeded to delete configmap " )
+
+
+
+
+	if _ , e:=k.CreateConfigmap( namespace ,  configmapData ) ; e!=nil {
+		fmt.Printf(  "failed to create configmap : %v " , e )
+		t.FailNow()
+	}
+	fmt.Println(  "succeeded to create configmap " )
+
+
+
+
+	if  cmDetailList , e:=k.ListConfigmap( namespace  ) ; e!=nil {
+		fmt.Printf(  "failed to create configmap : %v " , e )
+		t.FailNow()
+	}else{
+		fmt.Printf(  "configmap data: %v  \n" , cmDetailList[namespace+"/"+name] )
+	}
+
+
+
+	if  cmdata , e:=k.GetConfigmap( namespace , name ) ; e!=nil {
+		fmt.Printf(  "failed to create configmap : %v " , e )
+		t.FailNow()
+	}else{
+		fmt.Printf(  "configmap data: %v  \n" , cmdata )
+	}
+
+
+
+
+
+}
 
 

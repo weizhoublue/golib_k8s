@@ -56,11 +56,22 @@ example: https://github.com/kubernetes/client-go/tree/master/examples
 
 func (c *K8sClient) AutoConfig( )  error  
 
-func (c *K8sClient)GetPods( namespace string ) (  podNameList []map[string]string , podDetailList []corev1.Pod , e error )
+//--------------------- pods
+
+func (c *K8sClient)ListPods( namespace string ) (  podDetailList map[string]*corev1.Pod , e error )
 
 func (c *K8sClient)CheckPodHealthy( namespace string , podName string ) (  exist bool , e error )
 
-#使用传统的方式，deployment的数据结构定义固定，虽然 不和 版本耦合
+//--------------------- configmap
+
+func (c *K8sClient)ListConfigmap( namespace string ) (  cmDetailList map[string]*corev1.ConfigMap , e error )
+func (c *K8sClient)GetConfigmap( namespace , name string ) (  cmData *corev1.ConfigMap , e error )
+func (c *K8sClient)DeleteConfigmap( namespace , name string  ) ( e error )
+func (c *K8sClient)CreateConfigmap( namespace string ,  configmapData *corev1.ConfigMap ) ( result *corev1.ConfigMap , e error )
+
+
+//--------------------- deployment
+#使用传统的方式，deployment 的数据结构定义固定，虽然 不和 版本耦合
 func (c *K8sClient)GetDeploymentTyped( namespace string ,  deploymentName string ) (  deploymentBasicInfo []map[string]string , deploymentDetailList  []appsv1.Deployment , e error )
 
 #使用灵活的方式，使用 灵活的 unstructured.Unstructured 结构体来代表  deployment的数据结构
@@ -84,6 +95,8 @@ func (c *K8sClient)CheckUserRole( userName string  , userGroupName []string , ch
 
 func (c *K8sClient)CheckSelfRole(  checkVerb VerbType ,	checkResName string, checkSubResName string ,checkResInstanceName string , checkResApiGroup string , checkResNamespace string ) ( allowed bool , reason string , e error )
 
+// informer
+func (c *K8sClient)CreateInformer(  resourceType  schema.GroupVersionResource ,  EventHandlerFuncs *cache.ResourceEventHandlerFuncs )  ( lister cache.GenericLister , stopWatchCh chan struct{} ,  e error ) {
 
 
 
@@ -263,10 +276,9 @@ func (c *K8sClient)GetNodes(  ) (  nodeList []map[string]string , nodeDetailList
 input:
 	namespace="" , get all namespaces
 output:
-	podNameList [{"Name":.. "Namespace":.. "UID":...}]
-	podDetail []Pod  // struct defination: https://godoc.org/k8s.io/api/core/v1#Pod
+	podDetailList map[string]*corev1.Pod  // struct defination: https://godoc.org/k8s.io/api/core/v1#Pod
 */
-func (c *K8sClient)GetPods( namespace string ) (  podNameList []map[string]string , podDetailList []corev1.Pod , e error ){
+func (c *K8sClient)ListPods( namespace string ) (  podDetailList map[string]*corev1.Pod , e error ){
 
 	if c.Config == nil {
 		e=fmt.Errorf("struct K8sClient is not initialized correctly , Config==nil " )
@@ -303,15 +315,11 @@ func (c *K8sClient)GetPods( namespace string ) (  podNameList []map[string]strin
 	log("TypeMeta=%v \n" ,  pods.TypeMeta  )
 	log("ListMeta=%v \n" ,  pods.ListMeta  )
 
+	podDetailList=map[string]*corev1.Pod {}
 	for _, k :=range pods.Items {
-		podNameList=append(podNameList , map[string]string {
-			"Name": k.ObjectMeta.Name ,
-			"Namespace": k.ObjectMeta.Namespace ,
-			"UID": string(k.ObjectMeta.UID) ,
-		} )
+		podDetailList[ k.ObjectMeta.Namespace +"/"+k.ObjectMeta.Name]=&k
 	}
 
-	podDetailList=pods.Items
 	return 
 }
 
@@ -372,6 +380,182 @@ func (c *K8sClient)CheckPodHealthy( namespace string , podName string ) (  exist
 }
 
 
+//============= configmap =======================
+
+/*
+input:
+	namespace="" , get all namespaces
+output:
+	cmList [{"Name":.. "Namespace":.. "UID":...}]
+	cmDetailList map[string]corev1.ConfigMap  // index=Namespace+"/"+Name
+*/
+func (c *K8sClient)ListConfigmap( namespace string ) (  cmDetailList map[string]*corev1.ConfigMap , e error ){
+
+
+	if c.Config == nil {
+		e=fmt.Errorf("struct K8sClient is not initialized correctly , Config==nil " )
+		return
+	}
+
+	if len(namespace)==0 {
+		log("get pods from all namespaces \n")
+	}else{
+		log("get pods from namespace=%v \n" , namespace )
+	}
+
+	client, e1 := kubernetes.NewForConfig(c.Config)
+	if e1 != nil {
+		e=fmt.Errorf("failed to NewForConfig, info=%v , config=%v " , e1 , c.Config )
+		return
+	}
+
+	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second) 
+
+	// https://godoc.org/k8s.io/client-go/kubernetes/typed/core/v1#ConfigMapInterface
+	// https://github.com/kubernetes/client-go/blob/master/kubernetes/typed/core/v1/configmap.go#L40
+	cms, err := client.CoreV1().ConfigMaps(namespace).List( ctx , metav1.ListOptions{})
+	if err != nil {
+		e=fmt.Errorf("%v" , err )
+		return
+	}
+	if cms==nil {
+		return
+	}
+
+
+	log("got configmap num=%v \n" , len( cms.Items ) )
+	log("TypeMeta=%v \n" ,  cms.TypeMeta  )
+	log("ListMeta=%v \n" ,  cms.ListMeta  )
+
+	cmDetailList=map[string]*corev1.ConfigMap {}
+
+	for _, k :=range cms.Items {
+		cmDetailList[k.ObjectMeta.Namespace+"/"+k.ObjectMeta.Name]=&k
+	}
+
+	return 
+}
+
+
+
+/*
+input:
+	namespace="" , get all namespaces
+output:
+	cmData *corev1.ConfigMap
+*/
+func (c *K8sClient)GetConfigmap( namespace , name string ) (  cmData *corev1.ConfigMap , e error ){
+
+
+	if c.Config == nil {
+		e=fmt.Errorf("struct K8sClient is not initialized correctly , Config==nil " )
+		return
+	}
+
+	if len(namespace)==0 {
+		log("get pods from all namespaces \n")
+	}else{
+		log("get pods from namespace=%v \n" , namespace )
+	}
+
+	client, e1 := kubernetes.NewForConfig(c.Config)
+	if e1 != nil {
+		e=fmt.Errorf("failed to NewForConfig, info=%v , config=%v " , e1 , c.Config )
+		return
+	}
+
+	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second) 
+
+	// https://godoc.org/k8s.io/client-go/kubernetes/typed/core/v1#ConfigMapInterface
+	// https://github.com/kubernetes/client-go/blob/master/kubernetes/typed/core/v1/configmap.go#L40
+	cmData, e = client.CoreV1().ConfigMaps(namespace).Get( ctx , name , metav1.GetOptions{})
+
+
+	return 
+}
+
+
+
+func (c *K8sClient)DeleteConfigmap( namespace , name string  ) ( e error ){
+
+	if c.Config == nil {
+		e=fmt.Errorf("struct K8sClient is not initialized correctly , Config==nil " )
+		return
+	}
+
+	if len(namespace)==0 {
+		e=fmt.Errorf("empty namespace "  )
+		return
+	}
+	if len(name)==0 {
+		e=fmt.Errorf("empty configmap name "  )
+		return
+	}
+	log("delete configmap=%v under namespace=%v \n" ,  name , namespace  )
+
+
+	client, e1 := kubernetes.NewForConfig(c.Config)
+	if e1 != nil {
+		e=fmt.Errorf("failed to NewForConfig, info=%v , config=%v " , e1 , c.Config )
+		return
+	}
+
+	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second) 
+
+	// https://godoc.org/k8s.io/client-go/kubernetes/typed/core/v1#ConfigMapInterface
+	// https://github.com/kubernetes/client-go/blob/master/kubernetes/typed/core/v1/configmap.go#L40
+	err := client.CoreV1().ConfigMaps(namespace).Delete( ctx , name , metav1.DeleteOptions{})
+	if err != nil {
+		e=fmt.Errorf("%v" , err )
+		return
+	}
+
+	return 
+
+}
+
+
+
+
+
+
+func (c *K8sClient)CreateConfigmap( namespace string ,  configmapData *corev1.ConfigMap ) ( result *corev1.ConfigMap , e error ){
+
+	if c.Config == nil {
+		e=fmt.Errorf("struct K8sClient is not initialized correctly , Config==nil " )
+		return
+	}
+
+	if len(namespace)==0 {
+		e=fmt.Errorf("empty namespace "  )
+		return
+	}
+	if configmapData==nil {
+		e=fmt.Errorf("empty configmap name "  )
+		return
+	}
+	log("create configmap=%v under namespace=%v \n" ,  configmapData.ObjectMeta.Name , namespace  )
+
+
+	client, e1 := kubernetes.NewForConfig(c.Config)
+	if e1 != nil {
+		e=fmt.Errorf("failed to NewForConfig, info=%v , config=%v " , e1 , c.Config )
+		return
+	}
+
+	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second) 
+
+	// https://godoc.org/k8s.io/client-go/kubernetes/typed/core/v1#ConfigMapInterface
+	// https://github.com/kubernetes/client-go/blob/master/kubernetes/typed/core/v1/configmap.go#L40
+	result ,  e = client.CoreV1().ConfigMaps(namespace).Create( ctx , configmapData , metav1.CreateOptions{})
+
+
+	return 
+
+}
+
+
+
 
 
 //=============deployment=======================
@@ -383,17 +567,14 @@ input:
 output:
 	deploymentDetailInfo  []appsv1.Deployment  // // type Deployment : https://godoc.org/k8s.io/api/apps/v1#Deployment
 */
-func (c *K8sClient)GetDeploymentTyped( namespace string ,  deploymentName string ) (  deploymentBasicInfo []map[string]string , deploymentDetailList  []appsv1.Deployment , e error ){
+func (c *K8sClient)ListDeploymentTyped( namespace string  ) (   deploymentDetailList  map[string]*appsv1.Deployment , e error ){
 
 	if c.Config == nil {
 		e=fmt.Errorf("struct K8sClient is not initialized correctly , Config==nil " )
 		return
 	}
 
-	if len(deploymentName)!=0 && len(namespace)==0 {
-		e=fmt.Errorf("namespace could not be empty when deploymentName is set " )
-		return	
-	}
+
 
 
 	Client, e1 := kubernetes.NewForConfig(c.Config)
@@ -402,7 +583,6 @@ func (c *K8sClient)GetDeploymentTyped( namespace string ,  deploymentName string
 		return
 	}
 
-	if len(deploymentName)==0 {
 		if len(namespace)==0 {
 			log("get all deployment from all namesapces \n")
 		}else{
@@ -424,41 +604,11 @@ func (c *K8sClient)GetDeploymentTyped( namespace string ,  deploymentName string
 		log("ListMeta=%v \n" , result.ListMeta )
 		log("Deployment number=%v \n", len(result.Items)  )
 
+		deploymentDetailList = map[string]*appsv1.Deployment {}
 		for _, v :=range result.Items {
 			// type Deployment : https://godoc.org/k8s.io/api/apps/v1#Deployment
-			deploymentBasicInfo=append(deploymentBasicInfo , map[string]string{
-				"Name": v.ObjectMeta.Name ,
-				"Namespace": v.ObjectMeta.Namespace ,
-				"UID": string(v.ObjectMeta.UID) ,
-			})
+			deploymentDetailList[v.ObjectMeta.Namespace+"/"+v.ObjectMeta.Name]=&v
 		}
-		deploymentDetailList=result.Items
-
-	}else{
-		if len(namespace)==0 {
-			log("get deployment %v from all namesapces \n" , deploymentName )
-		}else{
-			log("get deployment %v from namesapces=%s \n" , deploymentName , namespace )
-		}
-
-		ctx, _ := context.WithTimeout(context.Background(), 5*time.Second) 
-
-		// https://godoc.org/k8s.io/client-go/kubernetes/typed/apps/v1#DeploymentInterface 
-		// https://godoc.org/k8s.io/apimachinery/pkg/apis/meta/v1#ListOptions
-		v, err  := Client.AppsV1().Deployments(namespace).Get( ctx , deploymentName ,  metav1.GetOptions{} )
-		if err != nil {
-			e=fmt.Errorf( "%v", err )
-			return
-		}
-
-		deploymentBasicInfo=append(deploymentBasicInfo , map[string]string{
-			"Name": v.ObjectMeta.Name ,
-			"Namespace": v.ObjectMeta.Namespace  ,
-			"UID" : string(v.ObjectMeta.UID) ,
-		})
-		deploymentDetailList=append(deploymentDetailList, *v )
-
-	}
 
 
 	log("succeeded  \n"  )
@@ -475,16 +625,11 @@ output:
 	deploymentDetailList  // unstructured.Unstructured : https://godoc.org/k8s.io/apimachinery/pkg/apis/meta/v1/unstructured#Unstructured
 */
 
-func (c *K8sClient)GetDeployment( namespace string ,  deploymentName string ) (  deploymentBasicInfo []map[string]string , deploymentDetailList  []unstructured.Unstructured , e error ){
+func (c *K8sClient)ListDeployment( namespace string   ) (   deploymentDetailList  map[string]*unstructured.Unstructured , e error ){
 
 	if c.Config == nil {
 		e=fmt.Errorf("struct K8sClient is not initialized correctly , Config==nil " )
 		return
-	}
-
-	if len(deploymentName)!=0 && len(namespace)==0 {
-		e=fmt.Errorf("namespace could not be empty when deploymentName is set " )
-		return	
 	}
 
 
@@ -498,7 +643,6 @@ func (c *K8sClient)GetDeployment( namespace string ,  deploymentName string ) ( 
 	// https://godoc.org/k8s.io/apimachinery/pkg/runtime/schema
 	// https://godoc.org/k8s.io/apimachinery/pkg/runtime/schema#GroupVersionResource
 	deploymentRes := schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "deployments"}
-	if len(deploymentName)==0 {
 
 		if len(namespace)==0 {
 			log("get all deployment from all namesapces \n")
@@ -522,6 +666,7 @@ func (c *K8sClient)GetDeployment( namespace string ,  deploymentName string ) ( 
 		// log("%v \n" , list )
 		log("%v \n" , list.Object )
 
+		deploymentDetailList = map[string]*unstructured.Unstructured {}
 		for _, d := range list.Items {
 			//for list.Items struct:  https://godoc.org/k8s.io/apimachinery/pkg/apis/meta/v1/unstructured#Unstructured
 
@@ -530,53 +675,12 @@ func (c *K8sClient)GetDeployment( namespace string ,  deploymentName string ) ( 
 				//get GetNamespace name
 				namespace:=d.GetNamespace()
 				//get GetNamespace name
-				uid:=d.GetUID()
+				//uid:=d.GetUID()
 
-				//a general method to get whatever information you want from the deplyment yaml
-				// unstructured:  https://godoc.org/k8s.io/apimachinery/pkg/apis/meta/v1/unstructured
-				// replicas, found, err := unstructured.NestedInt64(d.Object, "spec", "replicas")
-				// if err != nil || !found {
-				// 	fmt.Printf("Replicas not found for deployment %s: error=%s", name , err)
-				// }else{
-				// 	log("%v have replicas=%v\n", name , replicas )
-				// }
-
-				deploymentBasicInfo=append(deploymentBasicInfo , map[string]string{
-					"Name": name ,
-					"Namespace": namespace ,
-					"UID" : string(uid) ,
-				})
+				deploymentDetailList[namespace+"/"+name]=&d
 
 		}
 
-		deploymentDetailList=list.Items
-
-	}else{
-
-		if len(namespace)==0 {
-			log("get deployment %v from all namesapces \n" , deploymentName )
-		}else{
-			log("get deployment %v from namesapces=%s \n" , deploymentName , namespace )
-		}
-
-		ctx, _ := context.WithTimeout(context.Background(), 5*time.Second) 
-
-		// https://godoc.org/k8s.io/api/apps/v1#Resource
-		// https://godoc.org/k8s.io/client-go/dynamic#NamespaceableResourceInterface
-		d, err := Client.Resource(deploymentRes).Namespace(namespace).Get( ctx , deploymentName, metav1.GetOptions{})
-		if err != nil {
-			e=fmt.Errorf(" info=%v  " , err  )
-			return
-		}
-
-		deploymentBasicInfo=append(deploymentBasicInfo , map[string]string{
-			"Name": d.GetName() ,
-			"Namespace": d.GetNamespace() ,
-			"UID" : string(d.GetUID()) ,
-		})
-
-		deploymentDetailList=append(deploymentDetailList, *d)
-	}
 
 
 	log("succeeded  \n"  )
@@ -801,15 +905,15 @@ func (c *K8sClient)UpdateDeploymentTyped( namespace string , deploymentName stri
 	retryErr := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		// Retrieve the latest version of Deployment before attempting update
 		// RetryOnConflict uses exponential backoff to avoid exhausting the apiserver
-		_, deploymentDetailList , e:=c.GetDeploymentTyped( namespace , deploymentName ) 
+		deploymentDetailList , e:=c.ListDeploymentTyped( namespace  ) 
 		if e!=nil {
 			return fmt.Errorf( "failed to get deploymen=%v , info=%v " , e )
 		}
-		result:=deploymentDetailList[0]
+		result:=deploymentDetailList[namespace+"/"+deploymentName]
 		log("got deployment %v yaml under namespace %v  \n" , deploymentName  , namespace )
 
 		//log("%v\n" , result )
-		if err:=handler(&result) ; err!=nil {
+		if err:=handler(result) ; err!=nil {
 			return fmt.Errorf( "failed to call hander info=%v " , err )
 		}
 		//log("%v\n" , result )
@@ -818,7 +922,7 @@ func (c *K8sClient)UpdateDeploymentTyped( namespace string , deploymentName stri
 
 		//type DeploymentInterface:  https://godoc.org/k8s.io/client-go/kubernetes/typed/apps/v1#DeploymentInterface
 		// https://github.com/kubernetes/client-go/blob/master/kubernetes/typed/apps/v1/deployment.go#L130
-		_, err := Client.AppsV1().Deployments(namespace).Update(ctx , &result , metav1.UpdateOptions{} )
+		_, err := Client.AppsV1().Deployments(namespace).Update(ctx , result , metav1.UpdateOptions{} )
 		if err != nil {
 			return fmt.Errorf( "failed to update deploymen=%v , info=%v " , deploymentName , err )
 		}
@@ -870,15 +974,15 @@ func (c *K8sClient)UpdateDeployment( namespace string , deploymentName string , 
 	retryErr := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		// Retrieve the latest version of Deployment before attempting update
 		// RetryOnConflict uses exponential backoff to avoid exhausting the apiserver
-		_, deploymentDetailList , e:=c.GetDeployment( namespace , deploymentName ) 
+		deploymentDetailList , e:=c.ListDeployment( namespace  ) 
 		if e!=nil {
 			return fmt.Errorf( "failed to get deploymen=%v , info=%v " , e )
 		}
-		result:=deploymentDetailList[0]
+		result:=deploymentDetailList[namespace+"/"+deploymentName]
 		log("got deployment %v yaml under namespace %v  \n" , deploymentName  , namespace )
 
 		//log("%v\n" , result )
-		if err:=handler(&result) ; err!=nil {
+		if err:=handler(result) ; err!=nil {
 			return fmt.Errorf( "failed to call hander info=%v " , err )
 		}
 		//log("%v\n" , result )
@@ -891,7 +995,7 @@ func (c *K8sClient)UpdateDeployment( namespace string , deploymentName string , 
 		deploymentRes := schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "deployments"}
 		// https://godoc.org/k8s.io/api/apps/v1#Resource
 		// https://godoc.org/k8s.io/client-go/dynamic#NamespaceableResourceInterface
-		_, err := Client.Resource(deploymentRes).Namespace(namespace).Update(ctx , &result, metav1.UpdateOptions{})
+		_, err := Client.Resource(deploymentRes).Namespace(namespace).Update(ctx , result, metav1.UpdateOptions{})
 		if err != nil {
 			return fmt.Errorf( "failed to update deploymen=%v , info=%v " , deploymentName , err )
 		}
