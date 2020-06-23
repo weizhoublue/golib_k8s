@@ -65,9 +65,11 @@ func (c *K8sClient)CheckPodHealthy( namespace string , podName string ) (  exist
 //--------------------- configmap
 
 func (c *K8sClient)ListConfigmap( namespace string ) (  cmDetailList map[string]*corev1.ConfigMap , e error )
+//如果configmap不存在，error 存在
 func (c *K8sClient)GetConfigmap( namespace , name string ) (  cmData *corev1.ConfigMap , e error )
 func (c *K8sClient)DeleteConfigmap( namespace , name string  ) ( e error )
-func (c *K8sClient)CreateConfigmap( namespace string ,  configmapData *corev1.ConfigMap ) ( result *corev1.ConfigMap , e error )
+//如果存在，则更新，如果不存在，则创建它
+func (c *K8sClient)ApplyConfigmap( cmData *corev1.ConfigMap ) ( e error )
 
 
 //--------------------- deployment
@@ -461,9 +463,10 @@ input:
 	namespace="" , get all namespaces
 output:
 	cmData *corev1.ConfigMap
+
+如果configmap不存在，error 存在
 */
 func (c *K8sClient)GetConfigmap( namespace , name string ) (  cmData *corev1.ConfigMap , e error ){
-
 
 	if c.Config == nil {
 		if e1:=c.autoConfig() ; e1 !=nil {
@@ -494,6 +497,52 @@ func (c *K8sClient)GetConfigmap( namespace , name string ) (  cmData *corev1.Con
 
 	return 
 }
+
+
+//如果存在，则更新，如果不存在，则创建它
+func (c *K8sClient)ApplyConfigmap( cmData *corev1.ConfigMap ) ( e error ){
+
+
+	if c.Config == nil {
+		if e1:=c.autoConfig() ; e1 !=nil {
+			e=fmt.Errorf("failed to config : %v " , e )
+			return 
+		}
+	}
+
+	if len(cmData.ObjectMeta.Namespace)==0 {
+		e=fmt.Errorf("miss Namespace" )
+		return
+	}
+
+	// get first , to decide use create or update
+	existed:=true
+	if d , er:= c.GetConfigmap( cmData.ObjectMeta.Namespace , cmData.ObjectMeta.Name ) ; er!=nil || d==nil {
+			existed=false
+	}
+
+	client, e1 := kubernetes.NewForConfig(c.Config)
+	if e1 != nil {
+		e=fmt.Errorf("failed to NewForConfig, info=%v , config=%v " , e1 , c.Config )
+		return
+	}
+
+	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second) 
+
+	// https://godoc.org/k8s.io/client-go/kubernetes/typed/core/v1#ConfigMapInterface
+	// https://github.com/kubernetes/client-go/blob/master/kubernetes/typed/core/v1/configmap.go#L40
+	if existed {
+		cmData, e = client.CoreV1().ConfigMaps(cmData.ObjectMeta.Namespace).Update( ctx , cmData , metav1.UpdateOptions{})
+
+	}else{
+		cmData ,  e = client.CoreV1().ConfigMaps(cmData.ObjectMeta.Namespace).Create( ctx , cmData , metav1.CreateOptions{})
+
+	}
+
+
+	return 
+}
+
 
 
 
@@ -543,43 +592,43 @@ func (c *K8sClient)DeleteConfigmap( namespace , name string  ) ( e error ){
 
 
 
-func (c *K8sClient)CreateConfigmap( namespace string ,  configmapData *corev1.ConfigMap ) ( result *corev1.ConfigMap , e error ){
+// func (c *K8sClient)CreateConfigmap( namespace string ,  configmapData *corev1.ConfigMap ) ( result *corev1.ConfigMap , e error ){
 
-	if c.Config == nil {
-		if e1:=c.autoConfig() ; e1 !=nil {
-			e=fmt.Errorf("failed to config : %v " , e )
-			return 
-		}
-	}
-
-
-	if len(namespace)==0 {
-		e=fmt.Errorf("empty namespace "  )
-		return
-	}
-	if configmapData==nil {
-		e=fmt.Errorf("empty configmap name "  )
-		return
-	}
-	log("create configmap=%v under namespace=%v \n" ,  configmapData.ObjectMeta.Name , namespace  )
+// 	if c.Config == nil {
+// 		if e1:=c.autoConfig() ; e1 !=nil {
+// 			e=fmt.Errorf("failed to config : %v " , e )
+// 			return 
+// 		}
+// 	}
 
 
-	client, e1 := kubernetes.NewForConfig(c.Config)
-	if e1 != nil {
-		e=fmt.Errorf("failed to NewForConfig, info=%v , config=%v " , e1 , c.Config )
-		return
-	}
-
-	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second) 
-
-	// https://godoc.org/k8s.io/client-go/kubernetes/typed/core/v1#ConfigMapInterface
-	// https://github.com/kubernetes/client-go/blob/master/kubernetes/typed/core/v1/configmap.go#L40
-	result ,  e = client.CoreV1().ConfigMaps(namespace).Create( ctx , configmapData , metav1.CreateOptions{})
+// 	if len(namespace)==0 {
+// 		e=fmt.Errorf("empty namespace "  )
+// 		return
+// 	}
+// 	if configmapData==nil {
+// 		e=fmt.Errorf("empty configmap name "  )
+// 		return
+// 	}
+// 	log("create configmap=%v under namespace=%v \n" ,  configmapData.ObjectMeta.Name , namespace  )
 
 
-	return 
+// 	client, e1 := kubernetes.NewForConfig(c.Config)
+// 	if e1 != nil {
+// 		e=fmt.Errorf("failed to NewForConfig, info=%v , config=%v " , e1 , c.Config )
+// 		return
+// 	}
 
-}
+// 	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second) 
+
+// 	// https://godoc.org/k8s.io/client-go/kubernetes/typed/core/v1#ConfigMapInterface
+// 	// https://github.com/kubernetes/client-go/blob/master/kubernetes/typed/core/v1/configmap.go#L40
+// 	result ,  e = client.CoreV1().ConfigMaps(namespace).Create( ctx , configmapData , metav1.CreateOptions{})
+
+
+// 	return 
+
+// }
 
 
 

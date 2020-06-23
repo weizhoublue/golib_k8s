@@ -742,13 +742,19 @@ func Test_configmap(t *testing.T){
 	fmt.Println(  "succeeded to delete configmap " )
 
 
-
-
-	if _ , e:=k.CreateConfigmap( namespace ,  configmapData ) ; e!=nil {
-		fmt.Printf(  "failed to create configmap : %v " , e )
+	if  e:=k.ApplyConfigmap(  configmapData ) ; e!=nil {
+		fmt.Printf(  "failed to update configmap : %v " , e )
 		t.FailNow()
 	}
-	fmt.Println(  "succeeded to create configmap " )
+	fmt.Println(  "succeeded to update configmap " )
+
+
+
+	// if _ , e:=k.CreateConfigmap( namespace ,  configmapData ) ; e!=nil {
+	// 	fmt.Printf(  "failed to create configmap : %v " , e )
+	// 	t.FailNow()
+	// }
+	// fmt.Println(  "succeeded to create configmap " )
 
 
 
