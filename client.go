@@ -64,7 +64,7 @@ func (c *K8sClient)CheckPodHealthy( namespace string , podName string ) (  exist
 
 //--------------------- configmap
 
-func (c *K8sClient)ListConfigmap( namespace string ) (  cmDetailList map[string]*corev1.ConfigMap , e error )
+func (c *K8sClient)ListConfigmap( namespace string ) (  cmDetailList map[string] corev1.ConfigMap , e error )
 //如果configmap不存在，error 存在
 func (c *K8sClient)GetConfigmap( namespace , name string ) (  cmData *corev1.ConfigMap , e error )
 func (c *K8sClient)DeleteConfigmap( namespace , name string  ) ( e error )
@@ -406,7 +406,7 @@ output:
 	cmList [{"Name":.. "Namespace":.. "UID":...}]
 	cmDetailList map[string]corev1.ConfigMap  // index=Namespace+"/"+Name
 */
-func (c *K8sClient)ListConfigmap( namespace string ) (  cmDetailList map[string]*corev1.ConfigMap , e error ){
+func (c *K8sClient)ListConfigmap( namespace string ) (  cmDetailList map[string] corev1.ConfigMap , e error ){
 
 
 	if c.Config == nil {
@@ -418,9 +418,9 @@ func (c *K8sClient)ListConfigmap( namespace string ) (  cmDetailList map[string]
 
 
 	if len(namespace)==0 {
-		log("get pods from all namespaces \n")
+		log("get configmap from all namespaces \n")
 	}else{
-		log("get pods from namespace=%v \n" , namespace )
+		log("get configmap from namespace=%v \n" , namespace )
 	}
 
 	client, e1 := kubernetes.NewForConfig(c.Config)
@@ -447,10 +447,11 @@ func (c *K8sClient)ListConfigmap( namespace string ) (  cmDetailList map[string]
 	log("TypeMeta=%v \n" ,  cms.TypeMeta  )
 	log("ListMeta=%v \n" ,  cms.ListMeta  )
 
-	cmDetailList=map[string]*corev1.ConfigMap {}
+	cmDetailList=map[string] corev1.ConfigMap {}
 
 	for _, k :=range cms.Items {
-		cmDetailList[k.ObjectMeta.Namespace+"/"+k.ObjectMeta.Name]=&k
+		cmDetailList[k.ObjectMeta.Namespace+"/"+k.ObjectMeta.Name]= k
+
 	}
 
 	return 
@@ -477,9 +478,9 @@ func (c *K8sClient)GetConfigmap( namespace , name string ) (  cmData *corev1.Con
 
 
 	if len(namespace)==0 {
-		log("get pods from all namespaces \n")
+		log("get configmap from all namespaces \n")
 	}else{
-		log("get pods from namespace=%v \n" , namespace )
+		log("get configmap from namespace=%v \n" , namespace )
 	}
 
 	client, e1 := kubernetes.NewForConfig(c.Config)
@@ -515,11 +516,7 @@ func (c *K8sClient)ApplyConfigmap( cmData *corev1.ConfigMap ) ( e error ){
 		return
 	}
 
-	// get first , to decide use create or update
-	existed:=true
-	if d , er:= c.GetConfigmap( cmData.ObjectMeta.Namespace , cmData.ObjectMeta.Name ) ; er!=nil || d==nil {
-			existed=false
-	}
+
 
 	client, e1 := kubernetes.NewForConfig(c.Config)
 	if e1 != nil {
@@ -531,11 +528,20 @@ func (c *K8sClient)ApplyConfigmap( cmData *corev1.ConfigMap ) ( e error ){
 
 	// https://godoc.org/k8s.io/client-go/kubernetes/typed/core/v1#ConfigMapInterface
 	// https://github.com/kubernetes/client-go/blob/master/kubernetes/typed/core/v1/configmap.go#L40
-	if existed {
-		cmData, e = client.CoreV1().ConfigMaps(cmData.ObjectMeta.Namespace).Update( ctx , cmData , metav1.UpdateOptions{})
+	// if existed {
+	// 	log(" configmap %v exists , try to update it \n" , cmData.ObjectMeta.Name  )
+	// 	_, e = client.CoreV1().ConfigMaps(cmData.ObjectMeta.Namespace).Update( ctx , cmData , metav1.UpdateOptions{})
 
-	}else{
-		cmData ,  e = client.CoreV1().ConfigMaps(cmData.ObjectMeta.Namespace).Create( ctx , cmData , metav1.CreateOptions{})
+	// }else{
+	// 	log(" configmap %v miss , try to create it \n" , cmData.ObjectMeta.Name  )
+	// 	_ ,  e = client.CoreV1().ConfigMaps(cmData.ObjectMeta.Namespace).Create( ctx , cmData , metav1.CreateOptions{})
+
+	// }
+
+	if _ , e1:= client.CoreV1().ConfigMaps(cmData.ObjectMeta.Namespace).Create( ctx , cmData , metav1.CreateOptions{}) ; e1!=nil {
+		if _ , e2:=client.CoreV1().ConfigMaps(cmData.ObjectMeta.Namespace).Update( ctx , cmData , metav1.UpdateOptions{}) ; e2!=nil {
+			e=e2
+		}
 
 	}
 

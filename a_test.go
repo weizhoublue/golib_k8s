@@ -716,12 +716,14 @@ func Test_info_configmap(t *testing.T){
 
 func Test_configmap(t *testing.T){
 
-	k8s.EnableLog=false
+	k8s.EnableLog=true
+
+	
 	k:=k8s.K8sClient{}
 
 
 
-	namespace:="default"
+	namespace:="kube-system"
 	name:="myconfig"
 	// https://godoc.org/k8s.io/api/core/v1#ConfigMap
 	configmapData:=&corev1.ConfigMap{
@@ -738,8 +740,8 @@ func Test_configmap(t *testing.T){
 
 
 
-	k.DeleteConfigmap( namespace ,  name ) 
-	fmt.Println(  "succeeded to delete configmap " )
+	//k.DeleteConfigmap( namespace ,  name ) 
+	//fmt.Println(  "succeeded to delete configmap " )
 
 
 	if  e:=k.ApplyConfigmap(  configmapData ) ; e!=nil {
@@ -763,7 +765,7 @@ func Test_configmap(t *testing.T){
 		fmt.Printf(  "failed to create configmap : %v " , e )
 		t.FailNow()
 	}else{
-		fmt.Printf(  "configmap data: %v  \n" , cmDetailList[namespace+"/"+name] )
+		fmt.Printf(  "list configmap data: %v  =======\n" , cmDetailList[namespace+"/"+name] )
 	}
 
 
@@ -772,7 +774,7 @@ func Test_configmap(t *testing.T){
 		fmt.Printf(  "failed to create configmap : %v " , e )
 		t.FailNow()
 	}else{
-		fmt.Printf(  "configmap data: %v  \n" , cmdata )
+		fmt.Printf(  "get configmap data: %v  =========\n" , cmdata )
 	}
 
 
