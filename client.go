@@ -58,7 +58,7 @@ example: https://github.com/kubernetes/client-go/tree/master/examples
 
 //--------------------- pods
 
-func (c *K8sClient)ListPods( namespace string ) (  podDetailList map[string]*corev1.Pod , e error )
+func (c *K8sClient)ListPods( namespace string ) (  podDetailList map[string]corev1.Pod , e error )
 
 func (c *K8sClient)CheckPodHealthy( namespace string , podName string ) (  exist bool , e error )
 
@@ -290,7 +290,7 @@ input:
 output:
 	podDetailList map[string]*corev1.Pod  // struct defination: https://godoc.org/k8s.io/api/core/v1#Pod
 */
-func (c *K8sClient)ListPods( namespace string ) (  podDetailList map[string]*corev1.Pod , e error ){
+func (c *K8sClient)ListPods( namespace string ) (  podDetailList map[string]corev1.Pod , e error ){
 
 	if c.Config == nil {
 		if e1:=c.autoConfig() ; e1 !=nil {
@@ -329,9 +329,9 @@ func (c *K8sClient)ListPods( namespace string ) (  podDetailList map[string]*cor
 	log("TypeMeta=%v \n" ,  pods.TypeMeta  )
 	log("ListMeta=%v \n" ,  pods.ListMeta  )
 
-	podDetailList=map[string]*corev1.Pod {}
+	podDetailList=map[string]corev1.Pod {}
 	for _, k :=range pods.Items {
-		podDetailList[ k.ObjectMeta.Namespace +"/"+k.ObjectMeta.Name]=&k
+		podDetailList[ k.ObjectMeta.Namespace +"/"+k.ObjectMeta.Name]=k
 	}
 
 	return 
