@@ -711,6 +711,90 @@ func Test_info_configmap(t *testing.T){
 }
 
 
+
+func Test_info_node(t *testing.T){
+
+	k8s.EnableLog=false
+	k:=k8s.K8sClient{}
+
+
+	//------------ 当本地 cache  发生资源变化时，事件回调函数
+
+	//注意，当创建informer后，本地的cache 就会开始从K8S 同步 并添加 现有的 资源到本地的 cache 
+	// 所以，你会发现，当创建informer初始 ，HandlerAddFunc 回调就会被 调用多次
+	AddEventChannel := make(chan *corev1.Node , 100 )
+	HandlerAddFunc := func(obj interface{}) {
+				// 转化成相应的资源
+				// https://godoc.org/k8s.io/api/core/v1#ConfigMap
+				instance := obj.(*corev1.Node )
+				fmt.Printf(" new  node  : name=%v   \n", 
+						instance.ObjectMeta.Name     )
+
+				// 通过channel 同步到外部
+				AddEventChannel <- instance
+			}
+
+	DeleteFunc := func(obj interface{}) {
+				// 转化成相应的资源
+				// https://godoc.org/k8s.io/api/core/v1#ConfigMap
+				instance := obj.(*corev1.Node )
+				fmt.Printf(" del node evenvt : name=%v  \n", 
+						instance.ObjectMeta.Name    )
+			}
+
+	UpdateFunc := func( oldObj, newObj interface{})  {
+
+				// 如果 informer使用了 sync ， 那么需要添加如下 检查代码，以过滤掉无用的事件
+				newDepl := newObj.(*corev1.Node)
+				oldDepl := oldObj.(*corev1.Node)
+				if newDepl.ResourceVersion == oldDepl.ResourceVersion {
+					// Periodic resync will send update events for all known Deployments.
+					// Two different versions of the same Deployment will always have different RVs.
+					return
+				}
+
+				fmt.Printf(" update node evenvt : name=%v  \n" , 
+						 newDepl.ObjectMeta.Name   )
+			}
+
+	EventHandlerFuncs:=&cache.ResourceEventHandlerFuncs{
+		AddFunc: HandlerAddFunc , 
+		UpdateFunc: UpdateFunc , 
+		DeleteFunc: DeleteFunc ,
+	}
+	//EventHandlerFuncs:= (*cache.ResourceEventHandlerFuncs)nil
+
+	// https://github.com/kubernetes/client-go/blob/be97aaa976ad58026e66cd9af5aaf1b006081f09/informers/generic.go#L182
+	resType:= corev1.SchemeGroupVersion.WithResource("nodes")
+
+	// 注册 informer , 开始watch 全部 namespaces 下的 configmaps 信息
+	genericlister , stopWatchCh , e:=k.CreateInformer(resType , EventHandlerFuncs ) 
+	if e!=nil {
+		fmt.Printf(  "failed : %v " , e )
+		t.FailNow()
+	}
+	// 关闭watch
+	defer close(stopWatchCh) 
+
+
+    fmt.Printf("------------------------- \n")
+	time.Sleep(30*time.Second )
+	//======= 通过 lister，配合 label selector ，  能获取当前最新的 指定资源 数据
+    instanceList, e2 := genericlister.List( labels.Everything() )
+    if e2 != nil {
+		fmt.Printf(  "failed : %v " , e2 )
+		t.FailNow()
+    }
+    for n , item := range instanceList {
+    	instance:=item.(*corev1.Node)
+	    fmt.Printf("%d : %v \n ", n ,  instance.ObjectMeta.Name   )    	
+    }
+
+
+}
+
+
+
 //==================================================
 
 
@@ -782,5 +866,10 @@ func Test_configmap(t *testing.T){
 
 
 }
+
+
+
+
+
 
 
