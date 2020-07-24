@@ -113,6 +113,8 @@ var (
     // for config
     ScInPodPath="/var/run/secrets/kubernetes.io/serviceaccount"
     KubeConfigPath=filepath.Join(os.Getenv("HOME"), ".kube", "config")
+    RequestTimeOut=time.Duration(30)
+
 )
 
 type K8sClient struct {
@@ -248,7 +250,7 @@ func (c *K8sClient)GetNodes(  ) (  nodeList []map[string]string , nodeDetailList
 		return
 	}
 
-	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second) 
+	ctx, _ := context.WithTimeout(context.Background(), RequestTimeOut*time.Second) 
 
 	// https://godoc.org/k8s.io/client-go/kubernetes/typed/core/v1#CoreV1Client.Nodes
 	// https://github.com/kubernetes/client-go/blob/master/kubernetes/typed/core/v1/node.go#L40
@@ -311,7 +313,7 @@ func (c *K8sClient)ListPods( namespace string ) (  podDetailList map[string]core
 		return
 	}
 
-	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second) 
+	ctx, _ := context.WithTimeout(context.Background(), RequestTimeOut*time.Second) 
 
 	// https://godoc.org/k8s.io/client-go/kubernetes/typed/core/v1#PodInterface
 	// https://github.com/kubernetes/client-go/blob/master/kubernetes/typed/core/v1/pod.go#L40
@@ -372,7 +374,7 @@ func (c *K8sClient)CheckPodHealthy( namespace string , podName string ) (  exist
 		return
 	}
 
-	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second) 
+	ctx, _ := context.WithTimeout(context.Background(), RequestTimeOut*time.Second) 
 
 	// https://github.com/kubernetes/client-go/blob/master/kubernetes/typed/core/v1/pod.go#L71
 	_, err := Client.CoreV1().Pods(namespace).Get( ctx , podName, metav1.GetOptions{})
@@ -429,7 +431,7 @@ func (c *K8sClient)ListConfigmap( namespace string ) (  cmDetailList map[string]
 		return
 	}
 
-	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second) 
+	ctx, _ := context.WithTimeout(context.Background(), RequestTimeOut*time.Second) 
 
 	// https://godoc.org/k8s.io/client-go/kubernetes/typed/core/v1#ConfigMapInterface
 	// https://github.com/kubernetes/client-go/blob/master/kubernetes/typed/core/v1/configmap.go#L40
@@ -489,7 +491,7 @@ func (c *K8sClient)GetConfigmap( namespace , name string ) (  cmData *corev1.Con
 		return
 	}
 
-	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second) 
+	ctx, _ := context.WithTimeout(context.Background(), RequestTimeOut*time.Second) 
 
 	// https://godoc.org/k8s.io/client-go/kubernetes/typed/core/v1#ConfigMapInterface
 	// https://github.com/kubernetes/client-go/blob/master/kubernetes/typed/core/v1/configmap.go#L40
@@ -524,7 +526,7 @@ func (c *K8sClient)ApplyConfigmap( cmData *corev1.ConfigMap ) ( e error ){
 		return
 	}
 
-	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second) 
+	ctx, _ := context.WithTimeout(context.Background(), RequestTimeOut*time.Second) 
 
 	// https://godoc.org/k8s.io/client-go/kubernetes/typed/core/v1#ConfigMapInterface
 	// https://github.com/kubernetes/client-go/blob/master/kubernetes/typed/core/v1/configmap.go#L40
@@ -579,7 +581,7 @@ func (c *K8sClient)DeleteConfigmap( namespace , name string  ) ( e error ){
 		return
 	}
 
-	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second) 
+	ctx, _ := context.WithTimeout(context.Background(), RequestTimeOut*time.Second) 
 
 	// https://godoc.org/k8s.io/client-go/kubernetes/typed/core/v1#ConfigMapInterface
 	// https://github.com/kubernetes/client-go/blob/master/kubernetes/typed/core/v1/configmap.go#L40
@@ -625,7 +627,7 @@ func (c *K8sClient)DeleteConfigmap( namespace , name string  ) ( e error ){
 // 		return
 // 	}
 
-// 	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second) 
+// 	ctx, _ := context.WithTimeout(context.Background(), RequestTimeOut*time.Second) 
 
 // 	// https://godoc.org/k8s.io/client-go/kubernetes/typed/core/v1#ConfigMapInterface
 // 	// https://github.com/kubernetes/client-go/blob/master/kubernetes/typed/core/v1/configmap.go#L40
@@ -674,7 +676,7 @@ func (c *K8sClient)ListDeploymentTyped( namespace string  ) (   deploymentDetail
 			log("get all deployment from namesapces=%s \n" , namespace )
 		}
 
-		ctx, _ := context.WithTimeout(context.Background(), 5*time.Second) 
+		ctx, _ := context.WithTimeout(context.Background(), RequestTimeOut*time.Second) 
 
 		// https://godoc.org/k8s.io/client-go/kubernetes/typed/apps/v1#DeploymentInterface 
 		// https://godoc.org/k8s.io/apimachinery/pkg/apis/meta/v1#ListOptions
@@ -738,7 +740,7 @@ func (c *K8sClient)ListDeployment( namespace string   ) (   deploymentDetailList
 			log("get all deployment from namesapces=%s \n" , namespace )
 		}
 
-		ctx, _ := context.WithTimeout(context.Background(), 5*time.Second) 
+		ctx, _ := context.WithTimeout(context.Background(), RequestTimeOut*time.Second) 
 
 
 		// https://godoc.org/k8s.io/api/apps/v1#Resource
@@ -809,7 +811,7 @@ func (c *K8sClient)CreateDeploymentTyped( namespace string , deploymentSpec *app
 		return
 	}
 
-	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second) 
+	ctx, _ := context.WithTimeout(context.Background(), RequestTimeOut*time.Second) 
 
 	// https://github.com/kubernetes/client-go/blob/master/kubernetes/typed/apps/v1/deployment.go#L117
 	//type DeploymentInterface:  https://godoc.org/k8s.io/client-go/kubernetes/typed/apps/v1#DeploymentInterface
@@ -853,7 +855,7 @@ func (c *K8sClient)CreateDeployment( namespace string , deploymentYaml *unstruct
 		return
 	}
 
-	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second) 
+	ctx, _ := context.WithTimeout(context.Background(), RequestTimeOut*time.Second) 
 
 
 	// https://godoc.org/k8s.io/apimachinery/pkg/runtime/schema
@@ -901,7 +903,7 @@ func (c *K8sClient)DelDeploymentTyped( namespace string , deploymentName string 
 	// https://godoc.org/k8s.io/apimachinery/pkg/apis/meta/v1#DeletionPropagation
 	deletePolicy := metav1.DeletePropagationForeground
 
-	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second) 
+	ctx, _ := context.WithTimeout(context.Background(), RequestTimeOut*time.Second) 
 
 	//type DeploymentInterface:  https://godoc.org/k8s.io/client-go/kubernetes/typed/apps/v1#DeploymentInterface
 	// https://github.com/kubernetes/client-go/blob/master/kubernetes/typed/apps/v1/deployment.go#L160
@@ -958,7 +960,7 @@ func (c *K8sClient)DelDeployment( namespace string , deploymentName string ) ( e
 		PropagationPolicy: &deletePolicy,
 	}
 
-	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second) 
+	ctx, _ := context.WithTimeout(context.Background(), RequestTimeOut*time.Second) 
 
 	// https://godoc.org/k8s.io/api/apps/v1#Resource
 	// https://godoc.org/k8s.io/client-go/dynamic#NamespaceableResourceInterface	
@@ -1021,7 +1023,7 @@ func (c *K8sClient)UpdateDeploymentTyped( namespace string , deploymentName stri
 		}
 		//log("%v\n" , result )
 
-		ctx, _ := context.WithTimeout(context.Background(), 5*time.Second) 
+		ctx, _ := context.WithTimeout(context.Background(), RequestTimeOut*time.Second) 
 
 		//type DeploymentInterface:  https://godoc.org/k8s.io/client-go/kubernetes/typed/apps/v1#DeploymentInterface
 		// https://github.com/kubernetes/client-go/blob/master/kubernetes/typed/apps/v1/deployment.go#L130
@@ -1094,7 +1096,7 @@ func (c *K8sClient)UpdateDeployment( namespace string , deploymentName string , 
 		//log("%v\n" , result )
 
 
-		ctx, _ := context.WithTimeout(context.Background(), 5*time.Second) 
+		ctx, _ := context.WithTimeout(context.Background(), RequestTimeOut*time.Second) 
 
 		// https://godoc.org/k8s.io/apimachinery/pkg/runtime/schema
 		// https://godoc.org/k8s.io/apimachinery/pkg/runtime/schema#GroupVersionResource
@@ -1262,7 +1264,7 @@ func (c *K8sClient)CheckUserRole( userName string  , userGroupName []string , ch
 
 	}
 
-	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second) 
+	ctx, _ := context.WithTimeout(context.Background(), RequestTimeOut*time.Second) 
 
 	// https://godoc.org/k8s.io/client-go/kubernetes/typed/authorization/v1#AuthorizationV1Client.SubjectAccessReviews
 	// https://godoc.org/k8s.io/client-go/kubernetes/typed/authorization/v1#SubjectAccessReviewExpansion
@@ -1357,7 +1359,7 @@ func (c *K8sClient)CheckSelfRole(  checkVerb VerbType ,	checkResName string, che
 		}
 	}
 
-	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second) 
+	ctx, _ := context.WithTimeout(context.Background(), RequestTimeOut*time.Second) 
 
 
 	// https://godoc.org/k8s.io/client-go/kubernetes/typed/authorization/v1#AuthorizationV1Client.SelfSubjectAccessReviews
