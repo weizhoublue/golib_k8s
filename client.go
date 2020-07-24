@@ -113,7 +113,7 @@ var (
     // for config
     ScInPodPath="/var/run/secrets/kubernetes.io/serviceaccount"
     KubeConfigPath=filepath.Join(os.Getenv("HOME"), ".kube", "config")
-    RequestTimeOut=time.Duration(30)
+    RequestTimeOut=time.Duration(10)
 
 )
 
@@ -541,6 +541,7 @@ func (c *K8sClient)ApplyConfigmap( cmData *corev1.ConfigMap ) ( e error ){
 	// }
 
 	if _ , e1:= client.CoreV1().ConfigMaps(cmData.ObjectMeta.Namespace).Create( ctx , cmData , metav1.CreateOptions{}) ; e1!=nil {
+		ctx, _ = context.WithTimeout(context.Background(), RequestTimeOut*time.Second) 
 		if _ , e2:=client.CoreV1().ConfigMaps(cmData.ObjectMeta.Namespace).Update( ctx , cmData , metav1.UpdateOptions{}) ; e2!=nil {
 			e=e2
 		}
