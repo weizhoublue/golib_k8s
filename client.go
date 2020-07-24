@@ -543,7 +543,7 @@ func (c *K8sClient)ApplyConfigmap( cmData *corev1.ConfigMap ) ( e error ){
 	if _ , e1:= client.CoreV1().ConfigMaps(cmData.ObjectMeta.Namespace).Create( ctx , cmData , metav1.CreateOptions{}) ; e1!=nil {
 		ctx, _ = context.WithTimeout(context.Background(), RequestTimeOut*time.Second) 
 		if _ , e2:=client.CoreV1().ConfigMaps(cmData.ObjectMeta.Namespace).Update( ctx , cmData , metav1.UpdateOptions{}) ; e2!=nil {
-			e=e2
+			e=fmt.Errorf("failed to create info=%v ; failed to update config=%v " , e1 , e2 )
 		}
 
 	}
