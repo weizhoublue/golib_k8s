@@ -869,6 +869,23 @@ func Test_configmap(t *testing.T){
 
 
 
+func Test_ns(t *testing.T){
+
+	k8s.EnableLog=true
+	k:=k8s.K8sClient{}
+
+	if nsList , _ , e:=k.GetNamespace() ; e!=nil {
+		fmt.Printf(  "failed to GetNamespace  : %v " , e )
+		t.FailNow()
+
+	}else{
+
+		fmt.Printf("all namesapces: %v \n" , nsList )
+	}
+
+}
+
+
 
 
 

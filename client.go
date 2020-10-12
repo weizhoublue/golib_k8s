@@ -54,6 +54,13 @@ example: https://github.com/kubernetes/client-go/tree/master/examples
 
 
 
+//--------------------- namesapces
+
+func (c *K8sClient)GetNamespace(  ) (  nsList []string , nsDetailList []corev1.Namespace , e error )
+
+//--------------------- node
+
+func (c *K8sClient)GetNodes(  ) (  nodeList []map[string]string , nodeDetailList []corev1.Node , e error )
 
 
 //--------------------- pods
@@ -227,6 +234,50 @@ func (c *K8sClient) autoConfig( ) error  {
 
 
 //=============namespace=======================
+
+/*
+output:
+	nsList [ namespace_name ]
+	nsDetailList []Namespace  // struct defination: https://godoc.org/k8s.io/api/core/v1#Namespace
+*/
+func (c *K8sClient)GetNamespace(  ) (  nsList []string , nsDetailList []corev1.Namespace , e error ){
+
+	if c.Config == nil {
+		if e1:=c.autoConfig() ; e1 !=nil {
+			e=fmt.Errorf("failed to config : %v " , e )
+			return 
+		}
+	}
+
+	client, e1 := kubernetes.NewForConfig(c.Config)
+	if e1 != nil {
+		e=fmt.Errorf("failed to NewForConfig, info=%v , config=%v " , e1 , c.Config )
+		return
+	}
+
+	ctx, _ := context.WithTimeout(context.Background(), RequestTimeOut*time.Second) 
+
+	// https://godoc.org/k8s.io/client-go/kubernetes/typed/core/v1#CoreV1Client.Namespaces
+	// https://github.com/kubernetes/client-go/blob/master/kubernetes/typed/core/v1/namespace.go#L40
+	info , err := client.CoreV1().Namespaces().List( ctx ,  metav1.ListOptions{})
+	if err != nil {
+		e=fmt.Errorf("%v" , err )
+		return
+	}
+	if info==nil {
+		return
+	}
+
+	for _ , v := range info.Items {
+
+		nsList=append(nsList , v.ObjectMeta.Name )
+	}
+
+ 	nsDetailList=info.Items
+
+	return
+}
+
 
 
 //=============node=======================
