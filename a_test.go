@@ -656,6 +656,8 @@ func Test_info_configmap(t *testing.T){
 	resType:= corev1.SchemeGroupVersion.WithResource("configmaps")
 
 	// 注册 informer , 开始watch 全部 namespaces 下的 configmaps 信息
+	// 注意， CreateInformer 调用后，各种回调 就会开始收到  存量configmap 的 各种事件！
+	// 经过测试，就是 api server 各种重启， info 机制 也能 继续正常工作
 	genericlister , stopWatchCh , e:=k.CreateInformer(resType , EventHandlerFuncs ) 
 	if e!=nil {
 		fmt.Printf(  "failed : %v " , e )
