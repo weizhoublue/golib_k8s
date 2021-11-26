@@ -2,18 +2,21 @@ package golib_k8s
 import (
 	"os"
 	"fmt"
+	"os/signal"
 	"path/filepath"
+	"regexp"
 	goRuntime "runtime"
 	"strings"
 	"strconv"
 	"context"
+	"syscall"
 	"time"
 
-	"k8s.io/client-go/rest"	
+	"k8s.io/client-go/rest"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/tools/clientcmd"	
+	"k8s.io/client-go/tools/clientcmd"
 	corev1 "k8s.io/api/core/v1"
 	appsv1 "k8s.io/api/apps/v1"
 
@@ -30,12 +33,13 @@ import (
 	cache "k8s.io/client-go/tools/cache"
 	//"k8s.io/apimachinery/pkg/labels"
 
-
+	"k8s.io/client-go/tools/leaderelection/resourcelock"
+	"k8s.io/client-go/tools/leaderelection"
 )
 
 //=====================================================
 /*
-github 
+github
 https://github.com/kubernetes/client-go
 godoc
 https://godoc.org/k8s.io/client-go/kubernetes
@@ -109,6 +113,17 @@ func (c *K8sClient)CreateInformer(  resourceType  schema.GroupVersionResource , 
 
 
 
+//-------------- lease
+// 使用 k8s 的 lease 资源，实现 leader 选举
+// 注意：无论几个候选人上来，用什么样的ip，只要是 myId 相同， 他们都会拿到leader ， 简单说，只认 myId
+//如果持续 leaseDuration 没有 续租，则会丢失leader
+// renewDeadline 获取leader 后， 自动续租的周期
+// retryLockPeriod 尝试获取 leader 的间隔
+// 当取消leader选举，后者退出leader角色，务必调用 cancelLease  ， 否则 RunOrDie 协程 泄漏
+func (c *K8sClient)Lease( leaseLockName , leaseLockNamespace , myId string ,
+	leaseDuration , renewDeadline , retryLockPeriod uint , newLeaderHandler func(identity string)  )  ( acquireLeaderChan , lostLeaderChan chan bool , cancelLease context.CancelFunc ,  e error ) {
+
+
 */
 
 
@@ -153,8 +168,8 @@ func log( format string, a ...interface{} ) (n int, err error) {
 	    	funcname:=getFileName(goRuntime.FuncForPC(funcName).Name())
 	    	prefix += "[" + file + " " + funcname + " " + strconv.Itoa(line) +  "]     "
 	    }
-
-        return fmt.Printf(prefix+format , a... )    
+		t:=time.Now().Format(time.RFC3339Nano)
+        return fmt.Printf( fmt.Sprintf("[%v] %v %v" , t, prefix , format ) , a... )
     }
     return  0,nil
 }
@@ -190,7 +205,7 @@ func (c *K8sClient) autoConfig( ) error  {
 	// import "k8s.io/client-go/tools/clientcmd"
 	// masterUrl:=""
 	// kubeconfigPath:=""
-	// // If neither masterUrl or kubeconfigPath are passed in we fallback to inClusterConfig. 
+	// // If neither masterUrl or kubeconfigPath are passed in we fallback to inClusterConfig.
 	// // If inClusterConfig fails, we fallback to the default config
 	// cfg, e1 := clientcmd.BuildConfigFromFlags(masterUrl , kubeconfigPath )
  // 	if e1 != nil {
@@ -202,7 +217,7 @@ func (c *K8sClient) autoConfig( ) error  {
 
 
 	var config *rest.Config
-	var err error 
+	var err error
 
 	if existFile(KubeConfigPath)==true {
 		log("Outside of pod , try to get config from kube config file \n")
@@ -225,7 +240,8 @@ func (c *K8sClient) autoConfig( ) error  {
 		return fmt.Errorf("failed to get config " )
 	}
 
-	log("%v \n" , config )
+	// too long
+	//log("%v \n" , config )
 
 	c.Config=config
 
@@ -245,7 +261,7 @@ func (c *K8sClient)GetNamespace(  ) (  nsList []string , nsDetailList []corev1.N
 	if c.Config == nil {
 		if e1:=c.autoConfig() ; e1 !=nil {
 			e=fmt.Errorf("failed to config : %v " , e )
-			return 
+			return
 		}
 	}
 
@@ -255,7 +271,7 @@ func (c *K8sClient)GetNamespace(  ) (  nsList []string , nsDetailList []corev1.N
 		return
 	}
 
-	ctx, _ := context.WithTimeout(context.Background(), RequestTimeOut*time.Second) 
+	ctx, _ := context.WithTimeout(context.Background(), RequestTimeOut*time.Second)
 
 	// https://godoc.org/k8s.io/client-go/kubernetes/typed/core/v1#CoreV1Client.Namespaces
 	// https://github.com/kubernetes/client-go/blob/master/kubernetes/typed/core/v1/namespace.go#L40
@@ -291,7 +307,7 @@ func (c *K8sClient)GetNodes(  ) (  nodeList []map[string]string , nodeDetailList
 	if c.Config == nil {
 		if e1:=c.autoConfig() ; e1 !=nil {
 			e=fmt.Errorf("failed to config : %v " , e )
-			return 
+			return
 		}
 	}
 
@@ -301,7 +317,7 @@ func (c *K8sClient)GetNodes(  ) (  nodeList []map[string]string , nodeDetailList
 		return
 	}
 
-	ctx, _ := context.WithTimeout(context.Background(), RequestTimeOut*time.Second) 
+	ctx, _ := context.WithTimeout(context.Background(), RequestTimeOut*time.Second)
 
 	// https://godoc.org/k8s.io/client-go/kubernetes/typed/core/v1#CoreV1Client.Nodes
 	// https://github.com/kubernetes/client-go/blob/master/kubernetes/typed/core/v1/node.go#L40
@@ -348,7 +364,7 @@ func (c *K8sClient)ListPods( namespace string ) (  podDetailList map[string]core
 	if c.Config == nil {
 		if e1:=c.autoConfig() ; e1 !=nil {
 			e=fmt.Errorf("failed to config : %v " , e )
-			return 
+			return
 		}
 	}
 
@@ -364,7 +380,7 @@ func (c *K8sClient)ListPods( namespace string ) (  podDetailList map[string]core
 		return
 	}
 
-	ctx, _ := context.WithTimeout(context.Background(), RequestTimeOut*time.Second) 
+	ctx, _ := context.WithTimeout(context.Background(), RequestTimeOut*time.Second)
 
 	// https://godoc.org/k8s.io/client-go/kubernetes/typed/core/v1#PodInterface
 	// https://github.com/kubernetes/client-go/blob/master/kubernetes/typed/core/v1/pod.go#L40
@@ -387,7 +403,7 @@ func (c *K8sClient)ListPods( namespace string ) (  podDetailList map[string]core
 		podDetailList[ k.ObjectMeta.Namespace +"/"+k.ObjectMeta.Name]=k
 	}
 
-	return 
+	return
 }
 
 
@@ -402,7 +418,7 @@ func (c *K8sClient)CheckPodHealthy( namespace string , podName string ) (  exist
 	if c.Config == nil {
 		if e1:=c.autoConfig() ; e1 !=nil {
 			e=fmt.Errorf("failed to config : %v " , e )
-			return 
+			return
 		}
 	}
 
@@ -417,7 +433,7 @@ func (c *K8sClient)CheckPodHealthy( namespace string , podName string ) (  exist
 		return
 	}
 	log("get pod=%v from namespace=%v \n" , podName , namespace )
-	
+
 
 	Client, e1 := kubernetes.NewForConfig(c.Config)
 	if e1 != nil {
@@ -425,7 +441,7 @@ func (c *K8sClient)CheckPodHealthy( namespace string , podName string ) (  exist
 		return
 	}
 
-	ctx, _ := context.WithTimeout(context.Background(), RequestTimeOut*time.Second) 
+	ctx, _ := context.WithTimeout(context.Background(), RequestTimeOut*time.Second)
 
 	// https://github.com/kubernetes/client-go/blob/master/kubernetes/typed/core/v1/pod.go#L71
 	_, err := Client.CoreV1().Pods(namespace).Get( ctx , podName, metav1.GetOptions{})
@@ -446,7 +462,7 @@ func (c *K8sClient)CheckPodHealthy( namespace string , podName string ) (  exist
 	}
 
 
-	return 
+	return
 }
 
 
@@ -465,7 +481,7 @@ func (c *K8sClient)ListConfigmap( namespace string ) (  cmDetailList map[string]
 	if c.Config == nil {
 		if e1:=c.autoConfig() ; e1 !=nil {
 			e=fmt.Errorf("failed to config : %v " , e )
-			return 
+			return
 		}
 	}
 
@@ -482,7 +498,7 @@ func (c *K8sClient)ListConfigmap( namespace string ) (  cmDetailList map[string]
 		return
 	}
 
-	ctx, _ := context.WithTimeout(context.Background(), RequestTimeOut*time.Second) 
+	ctx, _ := context.WithTimeout(context.Background(), RequestTimeOut*time.Second)
 
 	// https://godoc.org/k8s.io/client-go/kubernetes/typed/core/v1#ConfigMapInterface
 	// https://github.com/kubernetes/client-go/blob/master/kubernetes/typed/core/v1/configmap.go#L40
@@ -507,7 +523,7 @@ func (c *K8sClient)ListConfigmap( namespace string ) (  cmDetailList map[string]
 
 	}
 
-	return 
+	return
 }
 
 
@@ -525,7 +541,7 @@ func (c *K8sClient)GetConfigmap( namespace , name string ) (  cmData *corev1.Con
 	if c.Config == nil {
 		if e1:=c.autoConfig() ; e1 !=nil {
 			e=fmt.Errorf("failed to config : %v " , e )
-			return 
+			return
 		}
 	}
 
@@ -542,14 +558,14 @@ func (c *K8sClient)GetConfigmap( namespace , name string ) (  cmData *corev1.Con
 		return
 	}
 
-	ctx, _ := context.WithTimeout(context.Background(), RequestTimeOut*time.Second) 
+	ctx, _ := context.WithTimeout(context.Background(), RequestTimeOut*time.Second)
 
 	// https://godoc.org/k8s.io/client-go/kubernetes/typed/core/v1#ConfigMapInterface
 	// https://github.com/kubernetes/client-go/blob/master/kubernetes/typed/core/v1/configmap.go#L40
 	cmData, e = client.CoreV1().ConfigMaps(namespace).Get( ctx , name , metav1.GetOptions{})
 
 
-	return 
+	return
 }
 
 
@@ -560,7 +576,7 @@ func (c *K8sClient)ApplyConfigmap( cmData *corev1.ConfigMap ) ( e error ){
 	if c.Config == nil {
 		if e1:=c.autoConfig() ; e1 !=nil {
 			e=fmt.Errorf("failed to config : %v " , e )
-			return 
+			return
 		}
 	}
 
@@ -577,7 +593,7 @@ func (c *K8sClient)ApplyConfigmap( cmData *corev1.ConfigMap ) ( e error ){
 		return
 	}
 
-	ctx, _ := context.WithTimeout(context.Background(), RequestTimeOut*time.Second) 
+	ctx, _ := context.WithTimeout(context.Background(), RequestTimeOut*time.Second)
 
 	// https://godoc.org/k8s.io/client-go/kubernetes/typed/core/v1#ConfigMapInterface
 	// https://github.com/kubernetes/client-go/blob/master/kubernetes/typed/core/v1/configmap.go#L40
@@ -592,7 +608,7 @@ func (c *K8sClient)ApplyConfigmap( cmData *corev1.ConfigMap ) ( e error ){
 	// }
 
 	if _ , e1:= client.CoreV1().ConfigMaps(cmData.ObjectMeta.Namespace).Create( ctx , cmData , metav1.CreateOptions{}) ; e1!=nil {
-		ctx, _ = context.WithTimeout(context.Background(), RequestTimeOut*time.Second) 
+		ctx, _ = context.WithTimeout(context.Background(), RequestTimeOut*time.Second)
 		if _ , e2:=client.CoreV1().ConfigMaps(cmData.ObjectMeta.Namespace).Update( ctx , cmData , metav1.UpdateOptions{}) ; e2!=nil {
 			e=fmt.Errorf("failed to create info=%v ; failed to update config=%v " , e1 , e2 )
 		}
@@ -600,7 +616,7 @@ func (c *K8sClient)ApplyConfigmap( cmData *corev1.ConfigMap ) ( e error ){
 	}
 
 
-	return 
+	return
 }
 
 
@@ -611,7 +627,7 @@ func (c *K8sClient)DeleteConfigmap( namespace , name string  ) ( e error ){
 	if c.Config == nil {
 		if e1:=c.autoConfig() ; e1 !=nil {
 			e=fmt.Errorf("failed to config : %v " , e )
-			return 
+			return
 		}
 	}
 
@@ -633,7 +649,7 @@ func (c *K8sClient)DeleteConfigmap( namespace , name string  ) ( e error ){
 		return
 	}
 
-	ctx, _ := context.WithTimeout(context.Background(), RequestTimeOut*time.Second) 
+	ctx, _ := context.WithTimeout(context.Background(), RequestTimeOut*time.Second)
 
 	// https://godoc.org/k8s.io/client-go/kubernetes/typed/core/v1#ConfigMapInterface
 	// https://github.com/kubernetes/client-go/blob/master/kubernetes/typed/core/v1/configmap.go#L40
@@ -643,7 +659,7 @@ func (c *K8sClient)DeleteConfigmap( namespace , name string  ) ( e error ){
 		return
 	}
 
-	return 
+	return
 
 }
 
@@ -657,7 +673,7 @@ func (c *K8sClient)DeleteConfigmap( namespace , name string  ) ( e error ){
 // 	if c.Config == nil {
 // 		if e1:=c.autoConfig() ; e1 !=nil {
 // 			e=fmt.Errorf("failed to config : %v " , e )
-// 			return 
+// 			return
 // 		}
 // 	}
 
@@ -679,14 +695,14 @@ func (c *K8sClient)DeleteConfigmap( namespace , name string  ) ( e error ){
 // 		return
 // 	}
 
-// 	ctx, _ := context.WithTimeout(context.Background(), RequestTimeOut*time.Second) 
+// 	ctx, _ := context.WithTimeout(context.Background(), RequestTimeOut*time.Second)
 
 // 	// https://godoc.org/k8s.io/client-go/kubernetes/typed/core/v1#ConfigMapInterface
 // 	// https://github.com/kubernetes/client-go/blob/master/kubernetes/typed/core/v1/configmap.go#L40
 // 	result ,  e = client.CoreV1().ConfigMaps(namespace).Create( ctx , configmapData , metav1.CreateOptions{})
 
 
-// 	return 
+// 	return
 
 // }
 
@@ -708,7 +724,7 @@ func (c *K8sClient)ListDeploymentTyped( namespace string  ) (   deploymentDetail
 	if c.Config == nil {
 		if e1:=c.autoConfig() ; e1 !=nil {
 			e=fmt.Errorf("failed to config : %v " , e )
-			return 
+			return
 		}
 	}
 
@@ -728,9 +744,9 @@ func (c *K8sClient)ListDeploymentTyped( namespace string  ) (   deploymentDetail
 			log("get all deployment from namesapces=%s \n" , namespace )
 		}
 
-		ctx, _ := context.WithTimeout(context.Background(), RequestTimeOut*time.Second) 
+		ctx, _ := context.WithTimeout(context.Background(), RequestTimeOut*time.Second)
 
-		// https://godoc.org/k8s.io/client-go/kubernetes/typed/apps/v1#DeploymentInterface 
+		// https://godoc.org/k8s.io/client-go/kubernetes/typed/apps/v1#DeploymentInterface
 		// https://godoc.org/k8s.io/apimachinery/pkg/apis/meta/v1#ListOptions
 		result, err  := Client.AppsV1().Deployments(namespace).List( ctx ,  metav1.ListOptions{} )
 		if err != nil {
@@ -752,7 +768,7 @@ func (c *K8sClient)ListDeploymentTyped( namespace string  ) (   deploymentDetail
 
 	log("succeeded  \n"  )
 
-	return 
+	return
 }
 
 
@@ -769,7 +785,7 @@ func (c *K8sClient)ListDeployment( namespace string   ) (   deploymentDetailList
 	if c.Config == nil {
 		if e1:=c.autoConfig() ; e1 !=nil {
 			e=fmt.Errorf("failed to config : %v " , e )
-			return 
+			return
 		}
 	}
 
@@ -792,7 +808,7 @@ func (c *K8sClient)ListDeployment( namespace string   ) (   deploymentDetailList
 			log("get all deployment from namesapces=%s \n" , namespace )
 		}
 
-		ctx, _ := context.WithTimeout(context.Background(), RequestTimeOut*time.Second) 
+		ctx, _ := context.WithTimeout(context.Background(), RequestTimeOut*time.Second)
 
 
 		// https://godoc.org/k8s.io/api/apps/v1#Resource
@@ -826,7 +842,7 @@ func (c *K8sClient)ListDeployment( namespace string   ) (   deploymentDetailList
 
 
 	log("succeeded  \n"  )
-	return 
+	return
 }
 
 
@@ -836,7 +852,7 @@ func (c *K8sClient)ListDeployment( namespace string   ) (   deploymentDetailList
 
 /*
 input:
-	namespace    
+	namespace
 output:
 	deploymentDetailInfo  []appsv1.Deployment  // // type Deployment : https://godoc.org/k8s.io/api/apps/v1#Deployment
 */
@@ -845,7 +861,7 @@ func (c *K8sClient)CreateDeploymentTyped( namespace string , deploymentSpec *app
 	if c.Config == nil {
 		if e1:=c.autoConfig() ; e1 !=nil {
 			e=fmt.Errorf("failed to config : %v " , e )
-			return 
+			return
 		}
 	}
 
@@ -863,11 +879,11 @@ func (c *K8sClient)CreateDeploymentTyped( namespace string , deploymentSpec *app
 		return
 	}
 
-	ctx, _ := context.WithTimeout(context.Background(), RequestTimeOut*time.Second) 
+	ctx, _ := context.WithTimeout(context.Background(), RequestTimeOut*time.Second)
 
 	// https://github.com/kubernetes/client-go/blob/master/kubernetes/typed/apps/v1/deployment.go#L117
 	//type DeploymentInterface:  https://godoc.org/k8s.io/client-go/kubernetes/typed/apps/v1#DeploymentInterface
-	info , err := Client.AppsV1().Deployments(namespace).Create(ctx, deploymentSpec , metav1.CreateOptions{} ) 
+	info , err := Client.AppsV1().Deployments(namespace).Create(ctx, deploymentSpec , metav1.CreateOptions{} )
 	if err != nil {
 		e=fmt.Errorf( "%v", err )
 		return
@@ -875,7 +891,7 @@ func (c *K8sClient)CreateDeploymentTyped( namespace string , deploymentSpec *app
 
 	log("succeeded  to create deployment: %v \n" , info )
 
-	return 
+	return
 }
 
 
@@ -886,7 +902,7 @@ func (c *K8sClient)CreateDeployment( namespace string , deploymentYaml *unstruct
 	if c.Config == nil {
 		if e1:=c.autoConfig() ; e1 !=nil {
 			e=fmt.Errorf("failed to config : %v " , e )
-			return 
+			return
 		}
 	}
 
@@ -907,7 +923,7 @@ func (c *K8sClient)CreateDeployment( namespace string , deploymentYaml *unstruct
 		return
 	}
 
-	ctx, _ := context.WithTimeout(context.Background(), RequestTimeOut*time.Second) 
+	ctx, _ := context.WithTimeout(context.Background(), RequestTimeOut*time.Second)
 
 
 	// https://godoc.org/k8s.io/apimachinery/pkg/runtime/schema
@@ -922,7 +938,7 @@ func (c *K8sClient)CreateDeployment( namespace string , deploymentYaml *unstruct
 	}
 
 	log("succeeded to create %v \n" , result.GetName() )
-	return 
+	return
 }
 
 
@@ -939,7 +955,7 @@ func (c *K8sClient)DelDeploymentTyped( namespace string , deploymentName string 
 	if c.Config == nil {
 		if e1:=c.autoConfig() ; e1 !=nil {
 			e=fmt.Errorf("failed to config : %v " , e )
-			return 
+			return
 		}
 	}
 
@@ -955,11 +971,11 @@ func (c *K8sClient)DelDeploymentTyped( namespace string , deploymentName string 
 	// https://godoc.org/k8s.io/apimachinery/pkg/apis/meta/v1#DeletionPropagation
 	deletePolicy := metav1.DeletePropagationForeground
 
-	ctx, _ := context.WithTimeout(context.Background(), RequestTimeOut*time.Second) 
+	ctx, _ := context.WithTimeout(context.Background(), RequestTimeOut*time.Second)
 
 	//type DeploymentInterface:  https://godoc.org/k8s.io/client-go/kubernetes/typed/apps/v1#DeploymentInterface
 	// https://github.com/kubernetes/client-go/blob/master/kubernetes/typed/apps/v1/deployment.go#L160
-	err := Client.AppsV1().Deployments(namespace).Delete(ctx , deploymentName , 
+	err := Client.AppsV1().Deployments(namespace).Delete(ctx , deploymentName ,
 			// https://godoc.org/k8s.io/apimachinery/pkg/apis/meta/v1#DeleteOptions
 			metav1.DeleteOptions{
 				PropagationPolicy: &deletePolicy    })
@@ -970,7 +986,7 @@ func (c *K8sClient)DelDeploymentTyped( namespace string , deploymentName string 
 
 	log("succeeded  \n"  )
 
-	return 
+	return
 }
 
 
@@ -981,7 +997,7 @@ func (c *K8sClient)DelDeployment( namespace string , deploymentName string ) ( e
 	if c.Config == nil {
 		if e1:=c.autoConfig() ; e1 !=nil {
 			e=fmt.Errorf("failed to config : %v " , e )
-			return 
+			return
 		}
 	}
 
@@ -1012,17 +1028,17 @@ func (c *K8sClient)DelDeployment( namespace string , deploymentName string ) ( e
 		PropagationPolicy: &deletePolicy,
 	}
 
-	ctx, _ := context.WithTimeout(context.Background(), RequestTimeOut*time.Second) 
+	ctx, _ := context.WithTimeout(context.Background(), RequestTimeOut*time.Second)
 
 	// https://godoc.org/k8s.io/api/apps/v1#Resource
-	// https://godoc.org/k8s.io/client-go/dynamic#NamespaceableResourceInterface	
+	// https://godoc.org/k8s.io/client-go/dynamic#NamespaceableResourceInterface
 	if err := Client.Resource(deploymentRes).Namespace(namespace).Delete(ctx , deploymentName, deleteOptions); err != nil {
 		e=fmt.Errorf(" info=%v  " , err  )
 		return
 	}
 
 	log("succeeded to delete %v \n" , deploymentName )
-	return 
+	return
 }
 
 
@@ -1033,7 +1049,7 @@ func (c *K8sClient)UpdateDeploymentTyped( namespace string , deploymentName stri
 	if c.Config == nil {
 		if e1:=c.autoConfig() ; e1 !=nil {
 			e=fmt.Errorf("failed to config : %v " , e )
-			return 
+			return
 		}
 	}
 
@@ -1062,7 +1078,7 @@ func (c *K8sClient)UpdateDeploymentTyped( namespace string , deploymentName stri
 	retryErr := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		// Retrieve the latest version of Deployment before attempting update
 		// RetryOnConflict uses exponential backoff to avoid exhausting the apiserver
-		deploymentDetailList , e:=c.ListDeploymentTyped( namespace  ) 
+		deploymentDetailList , e:=c.ListDeploymentTyped( namespace  )
 		if e!=nil {
 			return fmt.Errorf( "failed to get deploymen=%v , info=%v " , e )
 		}
@@ -1075,7 +1091,7 @@ func (c *K8sClient)UpdateDeploymentTyped( namespace string , deploymentName stri
 		}
 		//log("%v\n" , result )
 
-		ctx, _ := context.WithTimeout(context.Background(), RequestTimeOut*time.Second) 
+		ctx, _ := context.WithTimeout(context.Background(), RequestTimeOut*time.Second)
 
 		//type DeploymentInterface:  https://godoc.org/k8s.io/client-go/kubernetes/typed/apps/v1#DeploymentInterface
 		// https://github.com/kubernetes/client-go/blob/master/kubernetes/typed/apps/v1/deployment.go#L130
@@ -1092,7 +1108,7 @@ func (c *K8sClient)UpdateDeploymentTyped( namespace string , deploymentName stri
 	}
 
 	log("succeeded to update deployment %v under namespace %v \n" , deploymentName , namespace )
-	return 
+	return
 
 }
 
@@ -1103,7 +1119,7 @@ func (c *K8sClient)UpdateDeployment( namespace string , deploymentName string , 
 	if c.Config == nil {
 		if e1:=c.autoConfig() ; e1 !=nil {
 			e=fmt.Errorf("failed to config : %v " , e )
-			return 
+			return
 		}
 	}
 
@@ -1134,7 +1150,7 @@ func (c *K8sClient)UpdateDeployment( namespace string , deploymentName string , 
 	retryErr := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		// Retrieve the latest version of Deployment before attempting update
 		// RetryOnConflict uses exponential backoff to avoid exhausting the apiserver
-		deploymentDetailList , e:=c.ListDeployment( namespace  ) 
+		deploymentDetailList , e:=c.ListDeployment( namespace  )
 		if e!=nil {
 			return fmt.Errorf( "failed to get deploymen=%v , info=%v " , e )
 		}
@@ -1148,7 +1164,7 @@ func (c *K8sClient)UpdateDeployment( namespace string , deploymentName string , 
 		//log("%v\n" , result )
 
 
-		ctx, _ := context.WithTimeout(context.Background(), RequestTimeOut*time.Second) 
+		ctx, _ := context.WithTimeout(context.Background(), RequestTimeOut*time.Second)
 
 		// https://godoc.org/k8s.io/apimachinery/pkg/runtime/schema
 		// https://godoc.org/k8s.io/apimachinery/pkg/runtime/schema#GroupVersionResource
@@ -1168,7 +1184,7 @@ func (c *K8sClient)UpdateDeployment( namespace string , deploymentName string , 
 	}
 
 	log("succeeded to update deployment %v under namespace %v \n" , deploymentName , namespace )
-	return 
+	return
 
 }
 
@@ -1179,10 +1195,10 @@ func (c *K8sClient)UpdateDeployment( namespace string , deploymentName string , 
 
 
 
-//=========== RBAC, check whether a user has the specified role ========================== 
- 
+//=========== RBAC, check whether a user has the specified role ==========================
+
 /*
- write from example :  
+ write from example :
 	https://github.com/kubernetes/kubernetes/blob/master/pkg/kubectl/cmd/auth/cani.go#L235-L260
 	https://github.com/kubernetes/kubernetes/blob/master/pkg/kubectl/cmd/auth/cani_test.go
 */
@@ -1251,7 +1267,7 @@ func (c *K8sClient)CheckUserRole( userName string  , userGroupName []string , ch
 	if c.Config == nil {
 		if e1:=c.autoConfig() ; e1 !=nil {
 			e=fmt.Errorf("failed to config : %v " , e )
-			return 
+			return
 		}
 	}
 
@@ -1286,7 +1302,7 @@ func (c *K8sClient)CheckUserRole( userName string  , userGroupName []string , ch
 				ResourceAttributes: &authorizationv1.ResourceAttributes{  // https://godoc.org/k8s.io/api/authorization/v1#SubjectAccessReviewSpec
 					Namespace:   checkResNamespace ,
 					Verb:        string(checkVerb) ,
-					Group:       checkResApiGroup , //"extensions",  // resource api group 
+					Group:       checkResApiGroup , //"extensions",  // resource api group
 					Version:	"" , //  version of resource api group
 									    // Version is the API Version of the Resource.  "*" means all.
 									    // +optional
@@ -1306,7 +1322,7 @@ func (c *K8sClient)CheckUserRole( userName string  , userGroupName []string , ch
 				User: userName ,  // check for a user
 				Groups: userGroupName , // check for a user group
 				//UID: "" ,
-				NonResourceAttributes: &authorizationv1.NonResourceAttributes{  
+				NonResourceAttributes: &authorizationv1.NonResourceAttributes{
 					// https://godoc.org/k8s.io/api/authorization/v1#NonResourceAttributes
 					Path:   checkResName ,
 					Verb:   string(checkVerb) ,
@@ -1316,20 +1332,20 @@ func (c *K8sClient)CheckUserRole( userName string  , userGroupName []string , ch
 
 	}
 
-	ctx, _ := context.WithTimeout(context.Background(), RequestTimeOut*time.Second) 
+	ctx, _ := context.WithTimeout(context.Background(), RequestTimeOut*time.Second)
 
 	// https://godoc.org/k8s.io/client-go/kubernetes/typed/authorization/v1#AuthorizationV1Client.SubjectAccessReviews
 	// https://godoc.org/k8s.io/client-go/kubernetes/typed/authorization/v1#SubjectAccessReviewExpansion
 	response, err := client.SubjectAccessReviews().Create(ctx , &sar , metav1.CreateOptions{} )
 	if err != nil {
 		e=err
-		return 
+		return
 	}
 
 
 	// response  https://godoc.org/k8s.io/api/authorization/v1#SubjectAccessReview
 	log("%v \n" , response )
-	
+
 	// https://godoc.org/k8s.io/api/authorization/v1#SubjectAccessReviewStatus
 	log("%v \n" , response.Status.Allowed )
 	log("%v \n" , response.Status.Reason )
@@ -1339,7 +1355,7 @@ func (c *K8sClient)CheckUserRole( userName string  , userGroupName []string , ch
 	allowed=response.Status.Allowed
 	reason=response.Status.Reason
 
-	return 
+	return
 }
 
 
@@ -1358,7 +1374,7 @@ func (c *K8sClient)CheckSelfRole(  checkVerb VerbType ,	checkResName string, che
 	if c.Config == nil {
 		if e1:=c.autoConfig() ; e1 !=nil {
 			e=fmt.Errorf("failed to config : %v " , e )
-			return 
+			return
 		}
 	}
 
@@ -1386,7 +1402,7 @@ func (c *K8sClient)CheckSelfRole(  checkVerb VerbType ,	checkResName string, che
 				ResourceAttributes: &authorizationv1.ResourceAttributes{  // https://godoc.org/k8s.io/api/authorization/v1#ResourceAttributes
 					Namespace:   checkResNamespace ,
 					Verb:        string(checkVerb) ,
-					Group:       checkResApiGroup , //"extensions",  // resource api group 
+					Group:       checkResApiGroup , //"extensions",  // resource api group
 					Version:	"" , //  version of resource api group
 									    // Version is the API Version of the Resource.  "*" means all.
 									    // +optional
@@ -1411,7 +1427,7 @@ func (c *K8sClient)CheckSelfRole(  checkVerb VerbType ,	checkResName string, che
 		}
 	}
 
-	ctx, _ := context.WithTimeout(context.Background(), RequestTimeOut*time.Second) 
+	ctx, _ := context.WithTimeout(context.Background(), RequestTimeOut*time.Second)
 
 
 	// https://godoc.org/k8s.io/client-go/kubernetes/typed/authorization/v1#AuthorizationV1Client.SelfSubjectAccessReviews
@@ -1419,12 +1435,12 @@ func (c *K8sClient)CheckSelfRole(  checkVerb VerbType ,	checkResName string, che
 	response, err := client.SelfSubjectAccessReviews().Create( ctx , sar , metav1.CreateOptions{} )
 	if err != nil {
 		e=err
-		return 
+		return
 	}
 
 	// response  https://godoc.org/k8s.io/api/authorization/v1#SubjectAccessReview
 	log("%v \n" , response )
-	
+
 	// https://godoc.org/k8s.io/api/authorization/v1#SubjectAccessReviewStatus
 	log("%v \n" , response.Status.Allowed )
 	log("%v \n" , response.Status.Reason )
@@ -1434,14 +1450,14 @@ func (c *K8sClient)CheckSelfRole(  checkVerb VerbType ,	checkResName string, che
 	allowed=response.Status.Allowed
 	reason=response.Status.Reason
 
-	return 
+	return
 }
 
 
 //----------------- informer -----------------------
 
 // informer 就是使用了 K8S的 watch机制，把关系的K8S资源 同步到本地的缓存中，实现查看
-//example: 
+//example:
 // https://github.com/kubernetes/client-go/blob/3d5c80942cce510064da1ab62c579e190a0230fd/metadata/metadatainformer/informer_test.go
 // https://github.com/kubernetes/client-go/blob/af50d22222d331aaeee988a60a0707a4a4abaf26/examples/fake-client/main_test.go
 //  https://github.com/kubernetes/sample-controller/blob/master/main.go
@@ -1451,7 +1467,7 @@ func (c *K8sClient)CreateInformer(  resourceType  schema.GroupVersionResource , 
 	if c.Config == nil {
 		if e1:=c.autoConfig() ; e1 !=nil {
 			e=fmt.Errorf("failed to config : %v " , e )
-			return 
+			return
 		}
 	}
 
@@ -1467,8 +1483,8 @@ func (c *K8sClient)CreateInformer(  resourceType  schema.GroupVersionResource , 
 	//=======================================
 
 	// https://github.com/kubernetes/client-go/blob/af50d22222d331aaeee988a60a0707a4a4abaf26/informers/factory.go#L110
-	// 第二个参数，是resync ， 如果不为0，就会定期去 list， 即使被监控对象没发生变化，发现都会被定期调用 UpdateFunc 回调 
-	kubeInformerFactory:=kubeinformers.NewSharedInformerFactoryWithOptions(Client , time.Second*0 ) 
+	// 第二个参数，是resync ， 如果不为0，就会定期去 list， 即使被监控对象没发生变化，发现都会被定期调用 UpdateFunc 回调
+	kubeInformerFactory:=kubeinformers.NewSharedInformerFactoryWithOptions(Client , time.Second*0 )
 
 
 	//=======================================
@@ -1483,7 +1499,7 @@ func (c *K8sClient)CreateInformer(  resourceType  schema.GroupVersionResource , 
 		return
 	}
 
-	// 静态 生成指定 资源类型的 informer 
+	// 静态 生成指定 资源类型的 informer
 	// https://github.com/kubernetes/client-go/blob/af50d22222d331aaeee988a60a0707a4a4abaf26/informers/factory.go#L188
 	// podInformer := informers.Core().V1().Pods().Informer()
 	// podInformer.AddEventHandler( ...  )
@@ -1509,7 +1525,7 @@ func (c *K8sClient)CreateInformer(  resourceType  schema.GroupVersionResource , 
 	kubeInformerFactory.Start(stopWatchCh)
 
 	//=======================================
-    // 从 apiserver 同步资源，即 list 
+    // 从 apiserver 同步资源，即 list
     // https://github.com/kubernetes/client-go/blob/425ea3e5d030326fecb2994e026a4ead72cadef3/metadata/metadatainformer/informer.go#L97
 	//if synced := kubeInformerFactory.WaitForCacheSync(  stopWatchCh  )  ; synced[resourceType] == false {
 	if ! cache.WaitForCacheSync( stopWatchCh , GenericInformer.Informer().HasSynced) {
@@ -1525,15 +1541,221 @@ func (c *K8sClient)CreateInformer(  resourceType  schema.GroupVersionResource , 
 	lister=GenericInformer.Lister()
 
 
-    return 
+    return
 
 }
 
 
 
+//------ lease ----
+/*
+//原理例子  https://silenceper.com/blog/202002/kubernetes-leaderelection/
+基本原理其实就是利用通过Kubernetes中 configmap ， endpoints 或者 lease 资源实现一个分布式锁，抢(acqure)到锁的节点成为leader，
+并且定期更新（renew）。其他进程也在不断的尝试进行抢占，抢占不到则继续等待下次循环。当leader节点挂掉之后，租约到期，其他节点就成为新的leader
+在 k8s 的 client-go 的 api 中，上面的锁叫做 resourcelock，现在 client-go 中支持四种 resourceLock:
+configMapLock：基于 configMap 资源的操作扩展的分布式锁
+endpointLock: 基于 endPoint 资源的操作扩展的分布式锁
+leaseLock：基于 lease 资源，相对来说 leader 资源比较轻量
+multiLock：多种锁混合使用，一个 multilock ，即可以进行选择两种，当其中一种保存失败时，选择第二张
+*/
 
 
+// https://pkg.go.dev/k8s.io/api@v0.22.4/coordination/v1
+// https://pkg.go.dev/k8s.io/client-go/tools/leaderelection
+// https://pkg.go.dev/k8s.io/client-go@v0.22.4/tools/leaderelection/resourcelock
 
+// 使用 k8s 的 lease 资源，实现 leader 选举
+// 注意：无论几个候选人上来，用什么样的ip，只要是 myId 相同， 他们都会拿到leader ， 简单说，只认 myId
+//如果持续 leaseDuration 没有 续租，则会丢失leader
+// renewDeadline 获取leader 后， 自动续租的周期
+// retryLockPeriod 尝试获取 leader 的间隔
+// 当取消leader选举，后者退出leader角色，务必调用 cancelLease  ， 否则 RunOrDie 协程 泄漏
+func (c *K8sClient)Lease( leaseLockName , leaseLockNamespace , myId string ,
+	leaseDuration , renewDeadline , retryLockPeriod uint , newLeaderHandler func(identity string)  )  ( acquireLeaderChan , lostLeaderChan chan bool , cancelLease context.CancelFunc ,  e error ) {
+
+	// lease 名字必须是小写的，由数字，字母，'-' or '.' 等组成
+	// a lowercase RFC 1123 subdomain must consist of lower case alphanumeric characters, '-' or '.',
+	// and must start and end with an alphanumeric character
+	// (e.g. 'example.com', regex used for validation is '[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*')
+	if len(leaseLockName)==0 {
+		e=fmt.Errorf("leaseLockName is empty "  )
+		return
+	}
+	re := regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$`)
+	if re.MatchString(leaseLockName)==false {
+		e=fmt.Errorf("leaseLockName is not ignore "  )
+		return
+	}
+
+	if len(leaseLockNamespace)==0 {
+		e=fmt.Errorf("leaseLockNamespace is empty "  )
+		return
+	}
+	if len(myId)==0 {
+		e=fmt.Errorf("myId is empty "  )
+		return
+	}
+	if leaseDuration==0 {
+		leaseDuration=15
+		log("adjust leaseDuration to %v \n", leaseDuration )
+	}
+	if renewDeadline==0 {
+		renewDeadline=10
+		log("adjust renewDeadline to %v \n", renewDeadline )
+	}
+	if retryLockPeriod==0 {
+		retryLockPeriod=2
+		log("adjust retryLockPeriod to %v \n", retryLockPeriod )
+	}
+
+	if c.Config == nil {
+		if e1:=c.autoConfig() ; e1 !=nil {
+			e=fmt.Errorf("failed to config : %v " , e )
+			return
+		}
+	}
+
+	client, e1 := kubernetes.NewForConfig(c.Config)
+	if e1 != nil {
+		e=fmt.Errorf("failed to NewForConfig, info=%v , config=%v " , e1 , c.Config )
+		return
+	}
+
+
+	// use a Go context so we can tell the leaderelection code when we
+	// want to step down
+	var ctx context.Context
+	ctx, cancelLease = context.WithCancel(context.Background())
+
+
+	acquireLeaderChan=make(chan bool)
+	lostLeaderChan=make(chan bool, 10 )
+
+	// we use the Lease lock type since edits to Leases are less common
+	// and fewer objects in the cluster watch "all Leases".
+	// 指定锁的资源对象，这里使用了Lease资源，还支持configmap，endpoint，或者multilock(即多种配合使用)
+	// https://pkg.go.dev/k8s.io/client-go@v0.22.4/tools/leaderelection/resourcelock#LeaseLock
+	lock := &resourcelock.LeaseLock{
+		LeaseMeta: metav1.ObjectMeta{
+			Name:      leaseLockName,
+			Namespace: leaseLockNamespace,
+		},
+		Client: client.CoordinationV1(),
+		LockConfig: resourcelock.ResourceLockConfig{
+			Identity: myId,
+		},
+	}
+
+
+	// listen for interrupts or the Linux SIGTERM signal and cancel
+	// our context, which the leader election code will observe and
+	// step down
+	ch := make(chan os.Signal, 1)
+	signal.Notify(ch, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		select {
+		case <-ch:
+			log("Received termination, stop leader %s for leaase %v/%v \n", myId, leaseLockNamespace, leaseLockName)
+			cancelLease()
+		case <-ctx.Done():
+			log("cancel leader %s for leaase %v/%v \n", myId, leaseLockNamespace, leaseLockName)
+		}
+	}()
+
+
+	go func() {
+		// https://pkg.go.dev/k8s.io/client-go/tools/leaderelection@v0.22.4#RunOrDie
+		// https://pkg.go.dev/k8s.io/client-go/tools/leaderelection@v0.22.4#LeaderElectionConfig
+
+		// RunOrDie blocks until leader election loop is stopped by ctx or it has stopped holding the leader lease
+		leaderelection.RunOrDie(ctx, leaderelection.LeaderElectionConfig{
+			Lock: lock,
+			// IMPORTANT: you MUST ensure that any code you have that
+			// is protected by the lease must terminate **before**
+			// you call cancel. Otherwise, you could have a background
+			// loop still running and another process could
+			// get elected before your background loop finished, violating
+			// the stated goal of the lease.
+			ReleaseOnCancel: true,
+
+			// LeaseDuration is the duration that non-leader candidates will
+			// wait to force acquire leadership. This is measured against time of
+			// last observed ack.
+			//
+			// A client needs to wait a full LeaseDuration without observing a change to
+			// the record before it can attempt to take over. When all clients are
+			// shutdown and a new set of clients are started with different names against
+			// the same leader record, they must wait the full LeaseDuration before
+			// attempting to acquire the lease. Thus LeaseDuration should be as short as
+			// possible (within your tolerance for clock skew rate) to avoid a possible
+			// long waits in the scenario.
+			//
+			// Core clients default this value to 15 seconds.
+			//租约时间
+			LeaseDuration: time.Duration(leaseDuration)*time.Second , //租约时间
+
+			// RenewDeadline is the duration that the acting master will retry
+			// refreshing leadership before giving up.
+			// Core clients default this value to 10 seconds.
+			// leader 持有 leadse 的 续约周期
+			RenewDeadline: time.Duration(renewDeadline) * time.Second, //更新租约的
+
+			// RetryPeriod is the duration the LeaderElector clients should wait
+			// between tries of actions.
+			// Core clients default this value to 2 seconds.
+			// 所有候选人 尝试进行 竞选 尝试的间隔
+			RetryPeriod: time.Duration(retryLockPeriod) * time.Second,
+
+			//https://pkg.go.dev/k8s.io/client-go/tools/leaderelection@v0.22.4#LeaderCallbacks
+			Callbacks: leaderelection.LeaderCallbacks{
+
+				// when we get the leader, we could do business
+				// OnStartedLeading is called when a LeaderElector client starts leading
+				OnStartedLeading: func(ctx context.Context) {
+					//变为leader执行的业务代码
+					// we're notified when we start - this is where you would
+					// usually put your code
+					log("acquire leader %s for leaase %v/%v \n", myId, leaseLockNamespace, leaseLockName)
+					acquireLeaderChan <- true
+					//--
+					<-ctx.Done()
+					log("stop leader %s for leaase %v/%v \n", myId, leaseLockNamespace, leaseLockName)
+
+				},
+
+				// OnStoppedLeading is called when a LeaderElector client stops leading
+				// when we release the leader
+				OnStoppedLeading: func() {
+					// 我们主动放弃 或者异常失去了 leader
+					// we can do cleanup here
+					log("quit or lost leader %s for leaase %v/%v \n", myId, leaseLockNamespace, leaseLockName)
+					select{
+						case lostLeaderChan <-true:
+						default:
+							log("error, failed to inform lostLeaderChan for  leaase %v/%v \n" , leaseLockNamespace, leaseLockName )
+					}
+				},
+
+				// OnNewLeader is called when the client observes a leader that is
+				// not the previously observed leader. This includes the first observed
+				// leader when the client starts.
+				OnNewLeader: func(identity string) {
+					//当产生新的leader后执行的方法
+					// we're notified when new leader elected
+					if identity != myId {
+						log(" leader changed to %s for leaase %v/%v , not my id %v \n", identity, leaseLockNamespace, leaseLockName ,myId )
+					}
+					if newLeaderHandler != nil {
+						newLeaderHandler(identity)
+					}
+				},
+			},
+		})
+	}()
+
+	return
+
+}
 
 
 

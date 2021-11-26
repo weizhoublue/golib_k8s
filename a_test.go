@@ -1,22 +1,23 @@
 package golib_k8s_test
+
 import (
-	k8s "github.com/weizhouBlue/golib_k8s"
-	"testing"
 	"fmt"
+	k8s "golib_k8s"
+	"testing"
 	"time"
 
-
-	// for creating deployment 
+	// for creating deployment
 	appsv1 "k8s.io/api/apps/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	corev1 "k8s.io/api/core/v1"
-
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	cache "k8s.io/client-go/tools/cache"
 	"k8s.io/apimachinery/pkg/labels"
-
+	cache "k8s.io/client-go/tools/cache"
 )
+
+
+
 
 
 
@@ -887,6 +888,76 @@ func Test_ns(t *testing.T){
 
 }
 
+
+//----------------------
+
+
+func testLeader( id string){
+	k8s.EnableLog=true
+	k:=k8s.K8sClient{}
+
+	// lease 名字必须是小写的，由数字，字母，'-' or '.' 等组成, 其必须是 以字母来开头和结尾
+	// a lowercase RFC 1123 subdomain must consist of lower case alphanumeric characters, '-' or '.',
+	// and must start and end with an alphanumeric character
+	// (e.g. 'example.com', regex used for validation is '[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*')
+	leaseLockName:="welanlease"
+
+	leaseLockNamespace:="default"
+	// 注意：无论几个候选人上来，用什么样的ip，只要是 myId 相同， 他们都会拿到leader ， 简单说，只认 myId
+	myId:=id
+	//如果持续 leaseDuration 没有 续租，则会丢失leader
+	leaseDuration:=uint(20)
+	// renewDeadline 获取leader 后， 自动续租的周期
+	renewDeadline:=uint(5)
+	// 尝试获取 leader 的间隔
+	retryLockPeriod:=uint(2)
+	//newLeaderHandler:=nil
+	newLeaderHandler:=func(identity string){
+		fmt.Printf(" leader change event: new leader %v for lease %v/%v \n" , identity , leaseLockNamespace ,leaseLockName  )
+	}
+
+	acquireLeaderChan , lostLeaderChan , cancelLease,  e:=k.Lease( leaseLockName , leaseLockNamespace , myId ,
+		leaseDuration , renewDeadline , retryLockPeriod , newLeaderHandler )
+	if e!=nil {
+		fmt.Printf("error, failed to create lease for %v/%v , reason=%v \n",
+			leaseLockNamespace , leaseLockName , e)
+	}
+	defer func(){
+		cancelLease()
+	}()
+
+	fmt.Printf("%v waiting for the leader of %v/%v \n", myId , leaseLockNamespace ,leaseLockName  )
+	<-acquireLeaderChan
+
+	fmt.Printf(" I (%v) am leader for %v/%v \n", myId , leaseLockNamespace ,leaseLockName  )
+	// do business
+	for  i:=0 ; i<20 ; i++  {
+		select{
+		case <-lostLeaderChan:
+			fmt.Printf(" error, I(%v) lost leader for %v/%v \n",myId ,  leaseLockNamespace ,leaseLockName  )
+		case <-time.After(2*time.Second):
+		}
+	}
+
+	// cancel my leader
+	cancelLease()
+	fmt.Printf("%v quit leader for %v/%v \n", myId , leaseLockNamespace ,leaseLockName  )
+
+	time.Sleep(2*time.Second)
+}
+
+func Test_leaseTom(t *testing.T) {
+	testLeader("tom")
+}
+func Test_leaseJim(t *testing.T) {
+	testLeader("jim")
+}
+
+func Test_leaseBoth(t *testing.T) {
+	go testLeader("tom")
+	go testLeader("jim")
+	time.Sleep(120*time.Second)
+}
 
 
 
