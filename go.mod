@@ -1,4 +1,4 @@
-module golib_k8s
+module github.com/weizhouBlue/golib_k8s
 
 go 1.17
 

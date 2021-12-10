@@ -2,7 +2,7 @@ package golib_k8s_test
 
 import (
 	"fmt"
-	k8s "golib_k8s"
+	k8s "github.com/weizhouBlue/golib_k8s"
 	"testing"
 	"time"
 
