@@ -1080,7 +1080,7 @@ func (c *K8sClient)UpdateDeploymentTyped( namespace string , deploymentName stri
 		// RetryOnConflict uses exponential backoff to avoid exhausting the apiserver
 		deploymentDetailList , e:=c.ListDeploymentTyped( namespace  )
 		if e!=nil {
-			return fmt.Errorf( "failed to get deploymen=%v , info=%v " , e )
+			return fmt.Errorf( "failed to get deploymen=%v , info=%v " , deploymentName , e )
 		}
 		result:=deploymentDetailList[namespace+"/"+deploymentName]
 		log("got deployment %v yaml under namespace %v  \n" , deploymentName  , namespace )
@@ -1152,7 +1152,7 @@ func (c *K8sClient)UpdateDeployment( namespace string , deploymentName string , 
 		// RetryOnConflict uses exponential backoff to avoid exhausting the apiserver
 		deploymentDetailList , e:=c.ListDeployment( namespace  )
 		if e!=nil {
-			return fmt.Errorf( "failed to get deploymen=%v , info=%v " , e )
+			return fmt.Errorf( "failed to get deploymen=%v , info=%v " , deploymentName , e )
 		}
 		result:=deploymentDetailList[namespace+"/"+deploymentName]
 		log("got deployment %v yaml under namespace %v  \n" , deploymentName  , namespace )
